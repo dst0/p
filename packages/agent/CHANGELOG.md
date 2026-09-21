@@ -2,13 +2,38 @@
 
 ## [Unreleased]
 
+## [5.0.2] - 2026-09-21
+
+## [5.0.1] - 2026-09-21
+
 ### Added
 
+- Add compiled, legacy, and off project-instruction modes with dedicated compiler-model selection, lifecycle-aware rule retrieval, and evidence-gated verification.
 - Added exhaustive domain test suites for response streaming, generation progress telemetry, repetitive output detection, cold prefill detection, and sequential tool batch execution with 100% statement, function, and branch coverage.
 
 ### Fixed
 
+- Reduce shell-output sanitization allocations by reusing a compiled regular expression.
+- Honor terminal tool batches before explicit-finish protocol repair.
+- Require parsed names in misplaced JSON tool recovery to match registered tools.
+- Preflight compaction reserves the full response budget and keeps completed large tool calls atomic.
+- Require complete and convergent requirements before implementation mutation, reject rootless cwd-qualified paths, and preserve task locality after truncated tool calls.
+- Keep evidence completion convergent with model-owned free-text checklists, exact external receipt binding, safe source discovery, and actionable verification diagnostics.
+- Preserve length-finished streamed responses and run compaction before their protocol-repair request.
+- Emit an explicit aborted terminal response when cancellation occurs between provider-limited segments.
+- Keep provider-limited generation alive until completion without exposing internal continuation turns or executing partial tools.
+- Continue provider length-finished output safely in every completion mode without executing truncated tool calls.
+- Bound semantic repetitive-output recovery without limiting clean provider-length continuation.
+- Recover and remove misplaced JSON or XML tool calls only when the same complete action block is safely executable.
+- Remove only recovered JSON tool-call code blocks from assistant text while preserving surrounding prose and unrecovered JSON.
+- Expose whether a tool result was rejected before execution so verification evidence cannot mistake guardrail blocks for completed mutations.
+- Complete trusted audit verdicts without a redundant provider turn, preserve benchmark timeout and provider failures, and bound cumulative tool-argument parsing and JSON stream output.
+- Preserve completed verification across undeclared tool effects while keeping explicit completion and substantive follow-ups live.
 - Fixed unhandled rejection in `streaming-handler.ts` when async tool update event emissions reject by using `Promise.allSettled` in the catch block.
+
+### Changed
+
+- Use deterministic evidence verification with one concise completion checklist by default while keeping semantic requirement audits as an experimental opt-in mode.
 
 ## [0.4.158] - 2026-08-06
 

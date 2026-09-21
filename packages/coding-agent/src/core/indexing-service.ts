@@ -48,6 +48,11 @@ export interface RepositoryServiceStatus {
   lastError?: string;
 }
 
+export interface IndexingRuntimeProvenance {
+  daemonPath: string;
+  runtimeRoot: string;
+}
+
 export interface IndexingServiceStatusData {
   pid: number;
   running: boolean;
@@ -58,6 +63,8 @@ export interface IndexingServiceStatusData {
   indexingVersion?: string;
   /** Hash of the runtime configuration captured when the daemon started. */
   runtimeConfigFingerprint?: string;
+  /** Canonical daemon executable and checkout root captured at daemon startup. */
+  runtimeProvenance?: IndexingRuntimeProvenance;
 }
 
 interface IndexingServiceReinstallData {
@@ -124,6 +131,17 @@ export function writeIndexingServiceStatus(agentDir: string, value: IndexingServ
   fs.renameSync(temporaryPath, filePath);
 }
 
+export function getIndexingRuntimeProvenance(daemonPath: string | undefined): IndexingRuntimeProvenance | undefined {
+  if (!daemonPath) return undefined;
+  try {
+    const canonicalDaemonPath = fs.realpathSync(daemonPath);
+    const runtimeRoot = fs.realpathSync(path.resolve(path.dirname(canonicalDaemonPath), "../../.."));
+    return { daemonPath: canonicalDaemonPath, runtimeRoot };
+  } catch {
+    return undefined;
+  }
+}
+
 let indexingServiceInstance: IndexingService | undefined;
 
 export function getIndexingService(): IndexingService {
@@ -167,6 +185,7 @@ function isServiceStatus(value: unknown): value is IndexingServiceStatusData {
     typeof candidate.startedAt === "string" &&
     typeof candidate.updatedAt === "string" &&
     (candidate.runtimeConfigFingerprint === undefined || typeof candidate.runtimeConfigFingerprint === "string") &&
+    (candidate.runtimeProvenance === undefined || isRuntimeProvenance(candidate.runtimeProvenance)) &&
     Array.isArray(candidate.repos) &&
     candidate.repos.every(
       (entry) =>
@@ -180,6 +199,17 @@ function isServiceStatus(value: unknown): value is IndexingServiceStatusData {
         (entry.lastError === undefined || typeof entry.lastError === "string") &&
         (entry.progress === undefined || isIndexingProgress(entry.progress)),
     )
+  );
+}
+
+function isRuntimeProvenance(value: unknown): value is IndexingRuntimeProvenance {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Partial<IndexingRuntimeProvenance>;
+  return (
+    typeof candidate.daemonPath === "string" &&
+    path.isAbsolute(candidate.daemonPath) &&
+    typeof candidate.runtimeRoot === "string" &&
+    path.isAbsolute(candidate.runtimeRoot)
   );
 }
 

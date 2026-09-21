@@ -2,13 +2,30 @@
 
 ## [Unreleased]
 
+## [5.0.2] - 2026-09-21
+
+## [5.0.1] - 2026-09-21
+
 ### Fixed
 
+- Normalize Amazon Bedrock cached tokens into totalTokens so totalTokens equals input plus output plus cacheRead plus cacheWrite.
+- Keep faux-provider test streams isolated across resets and reloads, and clean failed harness construction.
+- Account exactly for text pricing modifiers and authenticated OpenRouter image metadata while rejecting incomplete rates, zero-usage sentinels, inconsistent totals, and ambiguous costs.
+- Close retry response streams, reject invalid retry counts, and back off transient image transport failures.
+- Preflight compaction reserves the full response budget and keeps completed large tool calls atomic.
+- Send default p attribution headers on direct OpenRouter text and image requests while preserving custom overrides.
+- Preserve caller-provided legacy OpenRouter app-title headers when adding attribution defaults.
+- Complete trusted audit verdicts without a redundant provider turn, preserve benchmark timeout and provider failures, and bound cumulative tool-argument parsing and JSON stream output.
 - Surface the real underlying error (ECONNREFUSED, ETIMEDOUT, DNS failures, etc.) instead of the generic "Connection error." message from the OpenAI SDK by walking the `cause` chain in all four provider error handlers.
 
 ### Changed
 
 - Split Anthropic and OpenAI-compatible streaming implementations into focused modules while preserving their public exports and streaming behavior.
+
+### Added
+
+- Add explicit Unlimited or request/token/estimated-USD task budgets with first-use selection, durable admission accounting, SDK controls, and /budget settings.
+- Add secure generate_image tooling, /model:image selection, and OpenAI, LLM-orchestrator, and configured OpenAI-compatible endpoint support.
 
 ## [0.4.158] - 2026-08-06
 

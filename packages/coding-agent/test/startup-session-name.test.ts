@@ -81,9 +81,11 @@ async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
   });
 
   return new Promise((resolvePromise, reject) => {
+    // Full-suite contention can make CLI startup materially slower than focused runs.
+    // Keep enough margin to test the CLI result rather than the harness timeout.
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");
-    }, 20_000);
+    }, 60_000);
     child.on("error", (error) => {
       clearTimeout(timeout);
       reject(error);
@@ -108,7 +110,7 @@ function setup(): CliDirs {
   return dirs;
 }
 
-describe("startup session name", () => {
+describe("startup session name", { timeout: 90_000 }, () => {
   it("sets --name on the selected session before runtime model validation", async () => {
     const dirs = setup();
     const result = await runCli(

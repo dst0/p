@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["ai"],
-  "type": "Fixed",
-  "summary": "Send default p attribution headers on direct OpenRouter text and image requests while preserving custom overrides."
-}

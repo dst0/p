@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Changed",
-  "summary": "Avoid intermediate arrays when extracting text from structured-state message blocks."
-}

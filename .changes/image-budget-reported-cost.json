@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["ai", "coding-agent"],
-  "type": "Fixed",
-  "summary": "Account exactly for text pricing modifiers and authenticated OpenRouter image metadata while rejecting incomplete rates, zero-usage sentinels, inconsistent totals, and ambiguous costs."
-}

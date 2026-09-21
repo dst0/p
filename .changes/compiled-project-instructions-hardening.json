@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Fixed",
-  "summary": "Harden compiled project-instruction caches, retries, concurrent publication, paged catalogs, and reader-tool discovery."
-}

@@ -91,18 +91,38 @@ fi
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
     CLIPBOARD_VERSION=$(node -p "require('./packages/coding-agent/package.json').optionalDependencies['@mariozechner/clipboard']")
-    # npm ci only installs optional deps for the current platform
-    # We need the base clipboard package and all platform bindings for bun cross-compilation
-    # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --include=optional --no-save --package-lock=false --force --ignore-scripts \
-        @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-linux-x64-gnu@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-linux-arm64-gnu@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-win32-x64-msvc@"$CLIPBOARD_VERSION" \
-        @mariozechner/clipboard-win32-arm64-msvc@"$CLIPBOARD_VERSION"
+    # npm ci only installs optional deps for the current platform. The binary
+    # archives need the base package and one binding for every target platform.
+    # npm install resolves the monorepo graph and can fail in npm 10's Arborist
+    # with "Cannot read properties of null (reading 'edgesOut')". Pack each
+    # bounded public package instead, then extract it directly into node_modules.
+    NATIVE_PACKAGES=(
+        @mariozechner/clipboard
+        @mariozechner/clipboard-darwin-arm64
+        @mariozechner/clipboard-darwin-x64
+        @mariozechner/clipboard-linux-x64-gnu
+        @mariozechner/clipboard-linux-arm64-gnu
+        @mariozechner/clipboard-win32-x64-msvc
+        @mariozechner/clipboard-win32-arm64-msvc
+    )
+    NATIVE_PACKAGE_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/p-clipboard-pack.XXXXXX")"
+    cleanup_native_package_tmp_dir() {
+        rm -rf "$NATIVE_PACKAGE_TMP_DIR"
+    }
+    trap cleanup_native_package_tmp_dir EXIT
+
+    for package in "${NATIVE_PACKAGES[@]}"; do
+        package_name="${package##*/}"
+        archive="$(npm pack --ignore-scripts --silent --pack-destination "$NATIVE_PACKAGE_TMP_DIR" "$package@$CLIPBOARD_VERSION")"
+        archive_path="$NATIVE_PACKAGE_TMP_DIR/$(basename "$archive")"
+        package_directory="node_modules/@mariozechner/$package_name"
+        rm -rf "$package_directory"
+        mkdir -p "$package_directory"
+        tar -xzf "$archive_path" -C "$package_directory" --strip-components=1
+    done
+
+    cleanup_native_package_tmp_dir
+    trap - EXIT
 else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
@@ -137,6 +157,18 @@ for platform in "${PLATFORMS[@]}"; do
         bun build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi.exe"
     else
         bun build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi"
+    fi
+
+    # Bun 1.4 can emit a malformed Darwin code signature that macOS terminates
+    # with SIGKILL before the CLI can start. Ad-hoc sign local Darwin builds;
+    # cross-platform release builds on Linux cannot invoke Apple's codesign.
+    if [[ "$platform" == darwin-* && "$(uname -s)" == "Darwin" ]]; then
+        if ! command -v codesign >/dev/null 2>&1; then
+            echo "codesign is required for Darwin binaries on macOS" >&2
+            exit 1
+        fi
+        codesign --force --sign - "$OUTPUT_DIR/$platform/pi"
+        codesign --verify --strict "$OUTPUT_DIR/$platform/pi"
     fi
 done
 

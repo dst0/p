@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Fixed",
-  "summary": "Preserve task budgets across resumed and switched sessions, reject stale or escaped ledger writes, roll back failed replacements, and expose the public budget API."
-}
