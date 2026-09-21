@@ -1,7 +1,11 @@
 import type { Model } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { streamSimpleOpenAICompletions } from "../../ai/src/providers/openai-completions/stream-simple-openai-completions.ts";
-import { enforceProjectInstructionCompilerReasoningControl } from "../src/core/project-instructions/compiler-reasoning-control.ts";
+import {
+  buildProjectInstructionCompilerModelIdentity,
+  enforceProjectInstructionCompilerReasoningControl,
+  matchesProjectInstructionCompilerModelIdentity,
+} from "../src/core/project-instructions/compiler-reasoning-control.ts";
 
 function model(overrides: Partial<Model<"openai-completions">> = {}): Model<"openai-completions"> {
   return {
@@ -20,6 +24,29 @@ function model(overrides: Partial<Model<"openai-completions">> = {}): Model<"ope
 }
 
 describe("project instruction compiler reasoning control", () => {
+  it("binds cache identity to the compiler contract and reasoning controls", () => {
+    const input = model({
+      compat: { thinkingFormat: "qwen", supportsReasoningEffort: true },
+      thinkingLevelMap: { medium: "medium", off: "disabled" },
+    });
+    const identity = buildProjectInstructionCompilerModelIdentity(input, "contract-v2", "medium");
+
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, input, "contract-v2", "medium")).toBe(true);
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, input, "contract-v1", "medium")).toBe(false);
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, input, "contract-v2", "high")).toBe(false);
+    expect(
+      matchesProjectInstructionCompilerModelIdentity(
+        identity,
+        model({
+          compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+          thinkingLevelMap: { medium: "medium", off: "disabled" },
+        }),
+        "contract-v2",
+        "medium",
+      ),
+    ).toBe(false);
+  });
+
   it("passes enabled reasoning through the actual simple-stream boundary", async () => {
     const controlled = enforceProjectInstructionCompilerReasoningControl(model({ compat: { thinkingFormat: "qwen" } }));
     let payload: Record<string, unknown> | undefined;
