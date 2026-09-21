@@ -127,3 +127,15 @@ test("validation skips optional local LLM tests only when Ollama is unavailable"
   assert.match(testStep, /P_NO_LOCAL_LLM=1 npm test/);
   assert.ok(testStep.indexOf("npm test") < testStep.indexOf("P_NO_LOCAL_LLM=1 npm test"));
 });
+
+test("npm publish tests use the same optional local LLM gate", () => {
+  const publish = job("publish-npm");
+  const testStart = publish.indexOf("name: Test");
+  assert.notEqual(testStart, -1, "publish test step must exist");
+  const testEnd = publish.indexOf("\n      - name:", testStart + 1);
+  const testStep = publish.slice(testStart, testEnd === -1 ? publish.length : testEnd);
+  assert.match(testStep, /curl --fail --silent --show-error --max-time 2 http:\/\/127\.0\.0\.1:11434\/api\/tags/);
+  assert.match(testStep, /npm test/);
+  assert.match(testStep, /P_NO_LOCAL_LLM=1 npm test/);
+  assert.ok(testStep.indexOf("npm test") < testStep.indexOf("P_NO_LOCAL_LLM=1 npm test"));
+});

@@ -225,7 +225,14 @@ jobs:
         run: npm run check
 
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null; then
+            npm test
+          else
+            echo "Ollama daemon unavailable; skipping optional local LLM tests"
+            P_NO_LOCAL_LLM=1 npm test
+          fi
 
       - name: Verify release artifacts are committed
         run: git diff --exit-code
