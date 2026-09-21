@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["agent"],
-  "type": "Fixed",
-  "summary": "Require parsed names in misplaced JSON tool recovery to match registered tools."
-}

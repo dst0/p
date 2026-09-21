@@ -26,3 +26,6 @@
 ## 2026-09-18 - Replacing chained array filters with explicit iteration
 **Learning:** Performing multiple `.filter()` passes and array creations (like filtering based on include/exclude match rules) creates many intermediate arrays and iterators that degrade performance in hot paths processing large arrays (such as thousands of file paths).
 **Action:** When filtering logic requires multiple sequential steps and states (e.g. includes, exclusions, force-includes), combine them into a single, explicit `for` loop that iterates once over the array and updates a boolean flag, pushing passing elements to a final result structure.
+## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
+**Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying file paths in `isSkippedWorkspaceEffectPath`) using `.split('/').some(...)` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
+**Action:** Replace `.split('/').some(...)` boundary checks with a pre-compiled regex with `(?:\/|^)` and `(?:\/|$)` boundaries. Also, correctly escape regex literals (e.g., `.` or `?`) when building patterns dynamically from static strings using `str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")`.

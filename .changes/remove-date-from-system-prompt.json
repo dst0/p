@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Changed",
-  "summary": "Move the current date from the static system prompt into per-request and queued-turn context to preserve cache prefixes without losing relative-date grounding."
-}

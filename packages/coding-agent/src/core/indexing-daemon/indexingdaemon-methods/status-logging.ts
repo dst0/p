@@ -1,4 +1,5 @@
 import {
+  getIndexingRuntimeProvenance,
   type IndexingServiceStatusData,
   type RepositoryServiceStatus,
   writeIndexingServiceStatus,
@@ -38,6 +39,7 @@ export function do_writeStatus(self: IndexingDaemon, running: boolean = !self.di
     updatedAt: new Date().toISOString(),
     indexingVersion: self.indexingVersion,
     runtimeConfigFingerprint: self.runtimeConfigFingerprint,
+    runtimeProvenance: getIndexingRuntimeProvenance(process.argv[1]),
     repos,
   };
   writeIndexingServiceStatus(self.options.agentDir, data);

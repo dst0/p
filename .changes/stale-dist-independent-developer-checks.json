@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": [
-    "coding-agent"
-  ],
-  "type": "Fixed",
-  "summary": "Make source development CLI and benchmark typecheck independent of stale or missing built dist artifacts."
-}

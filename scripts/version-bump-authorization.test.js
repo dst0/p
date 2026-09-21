@@ -23,6 +23,9 @@ import { discoverWorkspacePackagePaths } from "./release-workspaces.js";
 const sourceRoot = process.cwd();
 const versionBumpScript = resolve("scripts/version-bump.js");
 const shrinkwrapGenerator = resolve("scripts/generate-coding-agent-shrinkwrap.js");
+const currentVersion = JSON.parse(readFileSync(join(sourceRoot, "package.json"))).version;
+const [currentMajor, currentMinor, currentPatch] = currentVersion.split(".").map(Number);
+const nextPatchVersion = `${currentMajor}.${currentMinor}.${currentPatch + 1}`;
 const workspacePackages = [
   ["packages/agent/package.json", "@dst0/p-agent"],
   ["packages/ai/package.json", "@dst0/p-ai"],
@@ -177,7 +180,7 @@ test("version bump consumes the matching certificate transaction exactly once", 
   }
 });
 
-test("bumps the real 0.4.224 and 0.4.134 manifest snapshot and shrinkwrap to 0.5.0", () => {
+test("bumps the real manifest snapshot and shrinkwrap to the next patch version", () => {
   const repoRoot = createFixture();
   try {
     const snapshotPaths = [
@@ -198,7 +201,7 @@ test("bumps the real 0.4.224 and 0.4.134 manifest snapshot and shrinkwrap to 0.5
     copyFileSync(shrinkwrapGenerator, join(repoRoot, "scripts/generate-coding-agent-shrinkwrap.js"));
     git(repoRoot, "add", "--all");
     git(repoRoot, "commit", "-m", "load current release base snapshot");
-    git(repoRoot, "tag", "v0.4.224");
+    git(repoRoot, "tag", `v${currentVersion}`);
     write(
       repoRoot,
       ".changes/add-value.json",
@@ -208,20 +211,20 @@ test("bumps the real 0.4.224 and 0.4.134 manifest snapshot and shrinkwrap to 0.5
     git(repoRoot, "add", "--all");
     git(repoRoot, "commit", "-m", "cover current release snapshot");
     git(repoRoot, "update-ref", "refs/remotes/origin/main", "HEAD");
-    certifyReleaseAudit(repoRoot, "0.5.0");
-    const authorization = beginRelease(repoRoot, "0.5.0");
-    const result = spawnSync(process.execPath, [versionBumpScript, "0.5.0"], {
+    certifyReleaseAudit(repoRoot, nextPatchVersion);
+    const authorization = beginRelease(repoRoot, nextPatchVersion);
+    const result = spawnSync(process.execPath, [versionBumpScript, nextPatchVersion], {
       cwd: repoRoot,
       encoding: "utf8",
       env: { ...process.env, P_RELEASE_AUDIT_TOKEN: authorization.token },
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     for (const path of discoverWorkspacePackagePaths(repoRoot)) {
-      assert.equal(JSON.parse(readFileSync(join(repoRoot, path))).version, "0.5.0", path);
+      assert.equal(JSON.parse(readFileSync(join(repoRoot, path))).version, nextPatchVersion, path);
     }
     const shrinkwrap = JSON.parse(readFileSync(join(repoRoot, "packages/coding-agent/npm-shrinkwrap.json")));
-    assert.equal(shrinkwrap.version, "0.5.0");
-    assert.equal(shrinkwrap.packages[""].version, "0.5.0");
+    assert.equal(shrinkwrap.version, nextPatchVersion);
+    assert.equal(shrinkwrap.packages[""].version, nextPatchVersion);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

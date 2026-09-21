@@ -1,0 +1,22 @@
+# 2026-09-21 — Fallback guards need effect-aware read passthrough
+
+- **Status:** Resolved
+- **Task/context:** Diagnose a P session where compiled project instructions fell back and blocked disk inspection plus a workspace project-list tool.
+- **Unexpected observation or failure:** The fallback message said mutations were blocked, but it also rejected read-only shell commands and a list operation.
+- **Evidence:** A real session rejected both `echo ok && sw_vers && diskutil list` and `secure_hub_workspace_workspace_project_list`; focused regressions reproduced both classifications.
+- **Approaches tried:**
+  - **Attempt:** Restart the session in legacy project-instruction mode.
+    - **Outcome:** Partial
+    - **Why:** It removed the compiled-route guard, but task verification still classified the previously unknown shell sequence as a mutation.
+  - **Attempt:** Trust tools whose names contain `list` or `read`.
+    - **Outcome:** Did not work
+    - **Why:** Names are not an authority boundary; a custom mutating tool can shadow a safe-looking name.
+  - **Attempt:** Trust the registered definition only when it declares a resolved normal-risk read effect, and classify a narrow set of shell operations by command semantics.
+    - **Outcome:** Worked
+    - **Why:** The declaration is identity-bound to the active definition, while dangerous `diskutil` and `mount` forms remain fail-closed.
+- **Root cause:** The compiled fallback gate treated every non-built-in tool as mutating and the shell classifier omitted common macOS inspection commands.
+- **Resolution:** Added identity-bound declared-read passthrough and narrowly classified read-only macOS inspection commands, including only `diskutil list`/`info` and argument-free `mount`.
+- **Verification:** Focused project-instruction identity, fallback routing, and shell-classification tests cover successful reads, undeclared custom tools, shadowed built-ins, file redirection, disk erasure, and mounting.
+- **Prevention/follow-up:** MCP adapters must propagate trustworthy MCP read-only annotations into explicit P tool-effect declarations; omission must continue to resolve to unknown/high-risk.
+- **Reusable learning:** A fallback mutation barrier should classify effects from registered identity and command semantics, never from a safe-looking tool name alone.
+- **References:** `packages/coding-agent/test/project-instruction-fallback-tool-routing.test.ts`, `packages/coding-agent/test/project-instruction-gate-tool-identity.test.ts`, `packages/coding-agent/test/task-verification-read-only-shell.test.ts`

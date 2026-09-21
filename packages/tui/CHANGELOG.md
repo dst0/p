@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [5.0.2] - 2026-09-21
+
+## [5.0.1] - 2026-09-21
+
 ### Fixed
 
 - Fixed status-bar scrollback artifacts in TUI differential redraws by replacing `\x1b[2J` with in-place row clearing (`\x1b[H` + `\x1b[2K`).

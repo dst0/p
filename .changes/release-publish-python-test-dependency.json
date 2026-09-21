@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Install the pinned NumPy test dependency in release validation and npm publishing jobs so Python code-index tests run on clean hosted runners."
+}

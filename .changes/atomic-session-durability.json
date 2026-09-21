@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Fixed",
-  "summary": "Keep session JSONL and budget-ledger state consistent across append failures, durable directory creation, atomic publication, and corruption recovery."
-}

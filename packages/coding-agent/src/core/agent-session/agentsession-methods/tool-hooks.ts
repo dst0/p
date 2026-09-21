@@ -6,37 +6,13 @@ import {
   matchesProjectInstructionRuleBatch,
   type PreparedProjectInstructions,
 } from "../../project-instructions/index.ts";
-import {
-  isConfidentlyReadOnlyShellTool,
-  isPotentialMutationTool,
-} from "../../task-verification/tool-classification.ts";
+import { isPotentialMutationTool } from "../../task-verification/tool-classification.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { MARK_SESSION_PROGRESS_TOOL_NAME, UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
 import { getFinishWorkStatus, isRecord } from "../message-utils.ts";
-import { isProjectInstructionVerificationControlPlaneAction } from "../project-instruction-action-phases.ts";
 import { stageProjectInstructionActionBatch } from "../project-instruction-action-routing.ts";
 import { PROJECT_RULE_RECEIPT_CUSTOM_TYPE } from "../project-instruction-integrity.ts";
-
-const PROJECT_RULE_GATE_SAFE_TOOLS = new Set([
-  "ask_user",
-  "confirm_user",
-  "find",
-  FINISH_WORK_TOOL_NAME,
-  "grep",
-  "keep_context",
-  "list_skills",
-  "list",
-  "ls",
-  MARK_SESSION_PROGRESS_TOOL_NAME,
-  "read",
-  "read_rules",
-  "read_skills",
-  "semantic_search",
-  "session_recall",
-  SLEEP_TOOL_NAME,
-  "tool_search",
-  UPDATE_SESSION_STATE_TOOL_NAME,
-]);
+import { isTrustedProjectRuleTool } from "../project-rule-tool-trust.ts";
 
 export function do__installAgentToolHooks(self: AgentSession): void {
   self.agent.beforeToolCall = async ({ toolCall, args }) => {
@@ -232,11 +208,7 @@ async function getProjectRuleBlockReason(
     }
     return undefined;
   }
-  const mayMutate =
-    isPotentialMutationTool(toolName, args) ||
-    (!isTrustedProjectRuleReadOnlyShellTool(self, toolName, args) &&
-      !isTrustedProjectRuleSafeTool(self, toolName) &&
-      !isTrustedVerificationControlPlaneTool(self, toolName, args));
+  const mayMutate = isPotentialMutationTool(toolName, args) || !isTrustedProjectRuleTool(self, toolName, args);
   if (!mayMutate) return undefined;
   let refreshed: PreparedProjectInstructions;
   try {
@@ -258,7 +230,6 @@ async function getProjectRuleBlockReason(
     return "No project instruction freshness checkpoint exists for this turn. Start a new turn before mutating work.";
   }
   if (refreshed.manifest.mode === "fallback") {
-    if (!mayMutate) return undefined;
     return "Compiled project instructions are unavailable. Reload with project instruction mode legacy before mutating work.";
   }
   if (refreshed.manifest.inputHash !== gate.inputHash) {
@@ -272,26 +243,4 @@ async function getProjectRuleBlockReason(
   return `Call read_rules with each selected authoritative batch before continuing: ${JSON.stringify(
     currentPendingBatches.map((batch) => ({ links: batch.links })),
   )}.`;
-}
-
-function isTrustedProjectRuleSafeTool(self: AgentSession, toolName: string): boolean {
-  if (!PROJECT_RULE_GATE_SAFE_TOOLS.has(toolName)) return false;
-  return isTrustedBaseTool(self, toolName);
-}
-
-function isTrustedVerificationControlPlaneTool(self: AgentSession, toolName: string, args: unknown): boolean {
-  const entry = self._toolDefinitions.get(toolName);
-  if (!entry || !self._projectRuleSafeToolDefinitions.has(entry.definition)) return false;
-  return isProjectInstructionVerificationControlPlaneAction(toolName, args);
-}
-
-function isTrustedProjectRuleReadOnlyShellTool(self: AgentSession, toolName: string, args: unknown): boolean {
-  return isConfidentlyReadOnlyShellTool(toolName, args) && isTrustedBaseTool(self, toolName);
-}
-
-function isTrustedBaseTool(self: AgentSession, toolName: string): boolean {
-  const entry = self._toolDefinitions.get(toolName);
-  const baseDefinition = self._baseToolDefinitions.get(toolName);
-  if (!entry || entry.sourceInfo.source !== "builtin" || entry.definition !== baseDefinition) return false;
-  return !self._baseToolsOverride || !Object.hasOwn(self._baseToolsOverride, toolName);
 }
