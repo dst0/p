@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Ad-hoc sign locally built Darwin binaries so macOS can start the CLI after Bun compilation."
+}

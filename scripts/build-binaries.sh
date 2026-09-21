@@ -158,6 +158,18 @@ for platform in "${PLATFORMS[@]}"; do
     else
         bun build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi"
     fi
+
+    # Bun 1.4 can emit a malformed Darwin code signature that macOS terminates
+    # with SIGKILL before the CLI can start. Ad-hoc sign local Darwin builds;
+    # cross-platform release builds on Linux cannot invoke Apple's codesign.
+    if [[ "$platform" == darwin-* && "$(uname -s)" == "Darwin" ]]; then
+        if ! command -v codesign >/dev/null 2>&1; then
+            echo "codesign is required for Darwin binaries on macOS" >&2
+            exit 1
+        fi
+        codesign --force --sign - "$OUTPUT_DIR/$platform/pi"
+        codesign --verify --strict "$OUTPUT_DIR/$platform/pi"
+    fi
 done
 
 echo "==> Creating release archives..."
