@@ -388,7 +388,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     }
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
-
   const projectInstructions =
     projectInstructionMode === "compiled"
       ? await runBudget.run(() =>

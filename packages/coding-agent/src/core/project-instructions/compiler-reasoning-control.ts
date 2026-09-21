@@ -1,6 +1,23 @@
 import { createHash } from "node:crypto";
 import type { Api, Model, ModelThinkingLevel } from "@dst0/p-ai";
 
+export function buildProjectInstructionCompilerModelIdentity<TApi extends Api>(
+  model: Model<TApi>,
+  contractRevision: string,
+  requestedThinkingLevel?: ModelThinkingLevel,
+): string {
+  return `${model.provider}/${model.id}:${contractRevision}:${getProjectInstructionCompilerReasoningControlIdentity(model, requestedThinkingLevel)}`;
+}
+
+export function matchesProjectInstructionCompilerModelIdentity<TApi extends Api>(
+  identity: string,
+  model: Model<TApi>,
+  contractRevision: string,
+  requestedThinkingLevel?: ModelThinkingLevel,
+): boolean {
+  return identity === buildProjectInstructionCompilerModelIdentity(model, contractRevision, requestedThinkingLevel);
+}
+
 export function getProjectInstructionCompilerReasoningControlIdentity<TApi extends Api>(
   model: Model<TApi>,
   requestedThinkingLevel?: ModelThinkingLevel,

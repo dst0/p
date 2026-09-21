@@ -50,7 +50,6 @@ const AGENT_DIR = process.env.P_CODING_AGENT_DIR ?? path.join(os.homedir(), ".p"
 const SERVICE_ROOT = path.join(AGENT_DIR, "indexing-service");
 const BIN_DIR = path.join(SERVICE_ROOT, "bin");
 const VENV_DIR = path.join(SERVICE_ROOT, "venv");
-const QDRANT_DATA_DIR = path.join(AGENT_DIR, "code-rag", "qdrant");
 const EMBEDDING_SCRIPT = path.join(CODE_INDEX_DIR, "embedding_server.py");
 const EMBEDDING_PORT = 18742;
 const LOG_DIR = path.join(SERVICE_ROOT, "logs");
@@ -58,7 +57,6 @@ const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const DRY_RUN = process.argv.includes("--dry-run");
-
 
 export function getSystemdUserUnitDirectory(
   configHome = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
@@ -477,17 +475,10 @@ function isManagedBackendProcess(pid, options) {
 function managedBackendOptions() {
   return {
     qdrantBinary: path.join(BIN_DIR, "qdrant"),
-    qdrantConfigPath: path.join(resolveQdrantDataDirectory(readCodeRagConfig(AGENT_DIR)), "config.yaml"),
+    qdrantConfigPath: path.join(resolveManagedQdrantDataDirectory(readCodeRagConfig(AGENT_DIR)), "config.yaml"),
     embeddingScript: EMBEDDING_SCRIPT,
     embeddingPort: EMBEDDING_PORT,
   };
-}
-
-function resolveQdrantDataDirectory(config) {
-  const configuredDirectory = config?.qdrantDataDirectory;
-  return typeof configuredDirectory === "string" && configuredDirectory.length > 0
-    ? configuredDirectory
-    : QDRANT_DATA_DIR;
 }
 
 function getProcessWorkingDirectory(pid) {

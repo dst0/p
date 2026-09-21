@@ -6,7 +6,7 @@ import { buildRuleIndex } from "../project-rules.ts";
 import { mergeProviderAttributionHeaders } from "../provider-attribution.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SettingsManager } from "../settings-manager.ts";
-import { getProjectInstructionCompilerReasoningControlIdentity } from "./compiler-reasoning-control.ts";
+import { buildProjectInstructionCompilerModelIdentity } from "./compiler-reasoning-control.ts";
 import { createProjectInstructionController } from "./controller.ts";
 import { compileProjectInstructionsWithModel } from "./model-compiler.ts";
 import type { ProjectInstructionCompiler, ProjectInstructionController } from "./types.ts";
@@ -55,7 +55,11 @@ export async function createSessionProjectInstructionController(
       if (options.compiler) return customCompilerIdentity;
       const model = options.compilerModel ?? options.getModel();
       return model
-        ? `${model.provider}/${model.id}:${DEFAULT_MODEL_COMPILER_CONTRACT_REVISION}:${getProjectInstructionCompilerReasoningControlIdentity(model, options.thinkingLevel)}`
+        ? buildProjectInstructionCompilerModelIdentity(
+            model,
+            DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+            options.thinkingLevel,
+          )
         : "no-model";
     },
     compilerFailureBackoffMs: options.compiler ? undefined : DEFAULT_COMPILER_FAILURE_BACKOFF_MS,
