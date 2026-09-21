@@ -1,55 +1,35 @@
 import { createHash } from "node:crypto";
-import type { Api, Model } from "@dst0/p-ai";
+import type { Api, Model, ModelThinkingLevel } from "@dst0/p-ai";
 
-const EXPLICIT_DISABLE_FORMATS = new Set([
-  "deepseek",
-  "openrouter",
-  "qwen",
-  "qwen-chat-template",
-  "string-thinking",
-  "together",
-  "zai",
-]);
-
-export function buildProjectInstructionCompilerModelIdentity<TApi extends Api>(
+export function getProjectInstructionCompilerReasoningControlIdentity<TApi extends Api>(
   model: Model<TApi>,
-  contractRevision: string,
+  requestedThinkingLevel?: ModelThinkingLevel,
 ): string {
-  return `${model.provider}/${model.id}:${contractRevision}:${getProjectInstructionCompilerReasoningControlIdentity(model)}`;
-}
-
-export function matchesProjectInstructionCompilerModelIdentity<TApi extends Api>(
-  identity: string,
-  model: Model<TApi>,
-  contractRevision: string,
-): boolean {
-  return identity === buildProjectInstructionCompilerModelIdentity(model, contractRevision);
-}
-
-export function getProjectInstructionCompilerReasoningControlIdentity<TApi extends Api>(model: Model<TApi>): string {
   const openAIModel = model as Model<"openai-completions">;
-  const control =
-    model.reasoning && model.api === "openai-completions"
-      ? {
-          api: model.api,
-          reasoning: true,
-          format: openAIModel.compat?.thinkingFormat,
-          off: model.thinkingLevelMap?.off,
-        }
-      : { api: model.api, reasoning: model.reasoning === true };
+  const thinkingLevelMap = model.thinkingLevelMap;
+  const mapping = (level: ModelThinkingLevel | undefined): string | null | "unset" => {
+    if (!level) return null;
+    if (!thinkingLevelMap || !Object.hasOwn(thinkingLevelMap, level)) return "unset";
+    return thinkingLevelMap[level] ?? null;
+  };
+  const control = {
+    api: model.api,
+    reasoning: model.reasoning === true,
+    requestedThinkingLevel: requestedThinkingLevel ?? null,
+    requestedMapping: mapping(requestedThinkingLevel),
+    offMapping: mapping("off"),
+    format: model.api === "openai-completions" ? (openAIModel.compat?.thinkingFormat ?? null) : null,
+    supportsReasoningEffort:
+      model.api === "openai-completions" ? (openAIModel.compat?.supportsReasoningEffort ?? null) : null,
+  };
   return `reasoning-control-sha256=${createHash("sha256").update(JSON.stringify(control)).digest("hex")}`;
 }
 
+/**
+ * Keep compiler model selection permissive. The compiler validates the final text
+ * envelope and never persists thinking blocks, so missing provider-specific
+ * thinking metadata must not make compiled delivery unavailable.
+ */
 export function enforceProjectInstructionCompilerReasoningControl<TApi extends Api>(model: Model<TApi>): Model<TApi> {
-  if (!model.reasoning || model.api !== "openai-completions") return model;
-  const openAIModel = model as Model<"openai-completions">;
-  if (model.thinkingLevelMap?.off === null) {
-    throw new Error("Project instruction compiler model does not support thinking off");
-  }
-  const format = openAIModel.compat?.thinkingFormat;
-  if (format && EXPLICIT_DISABLE_FORMATS.has(format)) return model;
-  if (format === "openai" && typeof model.thinkingLevelMap?.off === "string") {
-    return model;
-  }
-  throw new Error("Project instruction compiler model lacks explicit thinking-disable compatibility");
+  return model;
 }

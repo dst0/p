@@ -87,7 +87,13 @@ describe("project instruction model compiler", () => {
   });
 
   it("materializes a source-grounded body without redundant trigger overrides", async () => {
-    completeSimpleMock.mockResolvedValue(response('{"alwaysOn":["constraint-1"]}'));
+    completeSimpleMock.mockResolvedValue({
+      ...response('{"alwaysOn":["constraint-1"]}'),
+      content: [
+        { type: "thinking", thinking: "internal compiler reasoning" },
+        { type: "text", text: '{"alwaysOn":["constraint-1"]}' },
+      ],
+    });
 
     await expect(compileProjectInstructionsWithModel(request, { model })).resolves.toEqual({
       body: "Never lose this exact text.",

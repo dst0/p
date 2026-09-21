@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import type { Api, Model } from "@dst0/p-ai";
+import type { Api, Model, ModelThinkingLevel } from "@dst0/p-ai";
 import type { ModelRegistry } from "../model-registry.ts";
 import { buildRuleIndex } from "../project-rules.ts";
 import { mergeProviderAttributionHeaders } from "../provider-attribution.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SettingsManager } from "../settings-manager.ts";
-import { buildProjectInstructionCompilerModelIdentity } from "./compiler-reasoning-control.ts";
+import { getProjectInstructionCompilerReasoningControlIdentity } from "./compiler-reasoning-control.ts";
 import { createProjectInstructionController } from "./controller.ts";
 import { compileProjectInstructionsWithModel } from "./model-compiler.ts";
 import type { ProjectInstructionCompiler, ProjectInstructionController } from "./types.ts";
@@ -17,13 +17,14 @@ interface CreateSessionProjectInstructionControllerOptions {
   modelRegistry: ModelRegistry;
   settingsManager: SettingsManager;
   getModel(): Model<Api> | undefined;
+  thinkingLevel?: ModelThinkingLevel;
   compilerModel?: Model<Api>;
   compiler?: ProjectInstructionCompiler;
   compilerIdentity?: string;
 }
 
 const DEFAULT_COMPILER_FAILURE_BACKOFF_MS = 5 * 60_000;
-export const DEFAULT_MODEL_COMPILER_CONTRACT_REVISION = "exact-source-v10-sparse-scope-calibration";
+export const DEFAULT_MODEL_COMPILER_CONTRACT_REVISION = "exact-source-v11-sparse-scope-reasoning";
 
 export async function createSessionProjectInstructionController(
   options: CreateSessionProjectInstructionControllerOptions,
@@ -41,6 +42,7 @@ export async function createSessionProjectInstructionController(
         apiKey: auth.apiKey,
         headers: mergeProviderAttributionHeaders(model, options.settingsManager, undefined, auth.headers),
         timeoutMs: configuredTimeout === 0 ? 60_000 : configuredTimeout,
+        reasoning: options.thinkingLevel,
       });
     });
   const customCompilerIdentity = options.compilerIdentity?.trim() || `sdk-custom-ephemeral:${randomUUID()}`;
@@ -53,7 +55,7 @@ export async function createSessionProjectInstructionController(
       if (options.compiler) return customCompilerIdentity;
       const model = options.compilerModel ?? options.getModel();
       return model
-        ? buildProjectInstructionCompilerModelIdentity(model, DEFAULT_MODEL_COMPILER_CONTRACT_REVISION)
+        ? `${model.provider}/${model.id}:${DEFAULT_MODEL_COMPILER_CONTRACT_REVISION}:${getProjectInstructionCompilerReasoningControlIdentity(model, options.thinkingLevel)}`
         : "no-model";
     },
     compilerFailureBackoffMs: options.compiler ? undefined : DEFAULT_COMPILER_FAILURE_BACKOFF_MS,

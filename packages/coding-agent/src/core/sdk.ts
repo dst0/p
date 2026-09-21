@@ -398,6 +398,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
             modelRegistry,
             settingsManager,
             getModel: () => agent.state.model,
+            thinkingLevel,
             compilerModel: projectInstructionCompilerModel,
             compiler: options.projectInstructionCompiler,
             compilerIdentity: options.projectInstructionCompilerIdentity,

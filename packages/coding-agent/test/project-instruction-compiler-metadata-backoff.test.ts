@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage, Model } from "@dst0/p-ai";
@@ -117,18 +117,6 @@ async function createCompilerLifecycle(
   return { controller, fixture, getApiKeyAndHeaders, modelState };
 }
 
-function expectInitialCompatibilityFailure(lifecycle: CompilerLifecycle, expectedError: RegExp): void {
-  expect(lifecycle.controller.state.current?.manifest).toMatchObject({ mode: "fallback", compilerStatus: "failed" });
-  expect(completeSimpleMock).not.toHaveBeenCalled();
-  const compilationDirectory = join(lifecycle.fixture.root, ".pdev", "instructions", "compilations");
-  const failureFile = readdirSync(compilationDirectory).find((name) => name.endsWith(".failure.json"));
-  expect(failureFile).toBeDefined();
-  if (!failureFile) throw new Error("Expected the local compiler failure to be cached");
-  expect(JSON.parse(readFileSync(join(compilationDirectory, failureFile), "utf8"))).toMatchObject({
-    error: expect.stringMatching(expectedError),
-  });
-}
-
 function modelIdentity(model: Model<"openai-completions">): string {
   return `${model.provider}/${model.id}`;
 }
@@ -139,21 +127,23 @@ afterEach(() => {
 });
 
 describe("project instruction compiler metadata backoff", () => {
-  it("keeps unchanged incompatible metadata inside the failure backoff", async () => {
+  it("does not fail closed when thinking-off metadata is incomplete", async () => {
     const lifecycle = await createCompilerLifecycle(compilerModel({ off: "none" }));
-    expectInitialCompatibilityFailure(lifecycle, /thinking-disable compatibility/iu);
+    expect(lifecycle.controller.state.current?.manifest).toMatchObject({ mode: "compiled", compilerStatus: "success" });
+    expect(completeSimpleMock).toHaveBeenCalledOnce();
 
     const refreshed = await lifecycle.controller.refresh();
 
-    expect(refreshed.manifest.mode).toBe("fallback");
-    expect(completeSimpleMock).not.toHaveBeenCalled();
+    expect(refreshed.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledOnce();
     expect(lifecycle.getApiKeyAndHeaders).toHaveBeenCalledOnce();
   });
 
-  it("retries when thinkingFormat changes while the off state stays constant", async () => {
+  it("recompiles when thinkingFormat changes while the off state stays constant", async () => {
     const initialModel = compilerModel({ off: "none" });
     const lifecycle = await createCompilerLifecycle(initialModel);
-    expectInitialCompatibilityFailure(lifecycle, /thinking-disable compatibility/iu);
+    expect(lifecycle.controller.state.current?.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledOnce();
 
     const compatibleModel = compilerModel({ off: "none", thinkingFormat: "qwen" });
     expect(modelIdentity(compatibleModel)).toBe(modelIdentity(initialModel));
@@ -161,14 +151,15 @@ describe("project instruction compiler metadata backoff", () => {
     lifecycle.modelState.current = compatibleModel;
     const refreshed = await lifecycle.controller.refresh();
 
-    expect.soft(refreshed.manifest.mode).toBe("compiled");
-    expect.soft(completeSimpleMock).toHaveBeenCalledOnce();
+    expect(refreshed.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledTimes(2);
   });
 
-  it("retries when the off state changes while thinkingFormat stays constant", async () => {
+  it("does not fail closed when the model cannot disable thinking", async () => {
     const initialModel = compilerModel({ off: null, thinkingFormat: "qwen" });
     const lifecycle = await createCompilerLifecycle(initialModel);
-    expectInitialCompatibilityFailure(lifecycle, /does not support thinking off/iu);
+    expect(lifecycle.controller.state.current?.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledOnce();
 
     const compatibleModel = compilerModel({ off: "none", thinkingFormat: "qwen" });
     expect(modelIdentity(compatibleModel)).toBe(modelIdentity(initialModel));
@@ -176,28 +167,15 @@ describe("project instruction compiler metadata backoff", () => {
     lifecycle.modelState.current = compatibleModel;
     const refreshed = await lifecycle.controller.refresh();
 
-    expect.soft(refreshed.manifest.mode).toBe("compiled");
-    expect.soft(completeSimpleMock).toHaveBeenCalledOnce();
+    expect(refreshed.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledTimes(2);
   });
 
-  it("retries when the exact off mapping changes while its type and thinkingFormat stay constant", async () => {
-    const attemptedOffMappings: Array<string | null | undefined> = [];
+  it("keeps provider identity stable while allowing thinking metadata to evolve", async () => {
     const initialModel = compilerModel({ off: "none", thinkingFormat: "openai" });
-    const lifecycle = await createCompilerLifecycle(initialModel, (model) => {
-      const off = model.thinkingLevelMap?.off;
-      attemptedOffMappings.push(off);
-      if (off !== "disabled") throw new Error("provider rejected the incompatible off mapping");
-      return compilerResponse(model);
-    });
-
-    expect.soft(lifecycle.controller.state.current?.manifest.mode).toBe("fallback");
-    expect.soft(attemptedOffMappings).toEqual(["none"]);
-    expect.soft(completeSimpleMock).toHaveBeenCalledOnce();
-
-    const unchanged = await lifecycle.controller.refresh();
-    expect.soft(unchanged.manifest.mode).toBe("fallback");
-    expect.soft(attemptedOffMappings).toEqual(["none"]);
-    expect.soft(completeSimpleMock).toHaveBeenCalledOnce();
+    const lifecycle = await createCompilerLifecycle(initialModel);
+    expect(lifecycle.controller.state.current?.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledOnce();
 
     const compatibleModel = compilerModel({ off: "disabled", thinkingFormat: "openai" });
     expect(modelIdentity(compatibleModel)).toBe(modelIdentity(initialModel));
@@ -208,8 +186,7 @@ describe("project instruction compiler metadata backoff", () => {
 
     const refreshed = await lifecycle.controller.refresh();
 
-    expect.soft(refreshed.manifest.mode).toBe("compiled");
-    expect.soft(attemptedOffMappings).toEqual(["none", "disabled"]);
-    expect.soft(completeSimpleMock).toHaveBeenCalledTimes(2);
+    expect(refreshed.manifest.mode).toBe("compiled");
+    expect(completeSimpleMock).toHaveBeenCalledTimes(2);
   });
 });
