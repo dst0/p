@@ -13,7 +13,7 @@
     - **Why:** The release jobs now provision the dependency before `npm test`, and the regression prevents the setup from drifting away from the test steps.
 - **Root cause:** Release jobs installed Node/system packages but assumed the hosted runner already provided the Python dependency declared by `packages/code-index/requirements.txt`.
 - **Resolution:** Both `validate` and `publish-npm` install `numpy==2.5.1` with the runner's Python before running tests.
-- **Verification:** `scripts/release-workflow.test.js` passes all 10 assertions after first failing on the missing setup step; the failed workflow log identifies the exact missing module.
+- **Verification:** `scripts/release-workflow.test.js` passes all 10 test cases after first failing on the missing setup step; the failed workflow log identifies the exact missing module.
 - **Prevention/follow-up:** Keep release workflow Python test dependencies explicit and pinned; rerun the immutable `v5.0.2` workflow after this fix is merged.
 - **Reusable learning:** A clean hosted release runner is not a development machine; every non-Node test dependency must be provisioned by the release workflow before the package test command.
 - **References:** `.github/workflows/build-binaries.yml`, `scripts/release-workflow.test.js`, `packages/code-index/requirements.txt`, run `35568830322`.
