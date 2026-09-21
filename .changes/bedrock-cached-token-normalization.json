@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": [
-    "ai"
-  ],
-  "type": "Fixed",
-  "summary": "Normalize Amazon Bedrock cached tokens into totalTokens so totalTokens equals input plus output plus cacheRead plus cacheWrite."
-}

@@ -1,9 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [5.0.1] - 2026-09-21
 
 ### Changed
 
+- Avoid intermediate arrays when extracting text from structured-state message blocks.
+- Precompute normalized recall-search terms before scoring candidates.
+- Allow the exact 5.0.1 release through an explicit major-version authorization bound to its certificate and transaction token.
+- Require free-text completion checklists to cover multiple explicit guarantees while keeping exhaustive semantic audit opt-in.
+- Clarified that the 5,000-character project-instruction budget does not limit the complete system prompt or provider request.
+- Move the current date from the static system prompt into per-request and queued-turn context to preserve cache prefixes without losing relative-date grounding.
+- Reduce requirement-definition prompt size while preserving exact referenced sources, source identity, clause locations, and direct user wording.
+- Reduce the default coding-agent system prompt without dropping its operational or verification invariants.
+- Use deterministic evidence verification with one concise completion checklist by default while keeping semantic requirement audits as an experimental opt-in mode.
 - Update footer indexing status to differentiate incremental updates (bold green arrow on white background) and focus progress on new chunks being embedded rather than total chunks already preserved.
 - Precompute project-rule polarity and token features once before quadratic conflict comparisons without changing conflict semantics.
 - Precompile ignored indexing-watch path segments so filesystem events avoid per-event path normalization and array allocation.
@@ -12,6 +21,16 @@
 
 ### Added
 
+- Automatically load bounded transitive rule prerequisites in one dependency-aware read_rules call.
+- Compile hashed AGENTS and CLAUDE sources into a bounded prompt block with integrity-checked read_rules and read_skills catalogs.
+- Add context efficiency, test output discipline, and parallel research subagent exploration guidelines to coding agent system prompt.
+- Add explicit Unlimited or request/token/estimated-USD task budgets with first-use selection, durable admission accounting, SDK controls, and /budget settings.
+- Add secure generate_image tooling, /model:image selection, and OpenAI, LLM-orchestrator, and configured OpenAI-compatible endpoint support.
+- Add bounded metadata-only list_skills discovery for compiled project-instruction catalogs.
+- Add compiled, legacy, and off project-instruction modes with dedicated compiler-model selection, lifecycle-aware rule retrieval, and evidence-gated verification.
+- Document verified cross-filesystem Qdrant migration, readiness comparisons and cutoff-tie search checks.
+- Document safe Qdrant storage recovery with reference checks and verified archive restoration.
+- Automate changelog auditing with a revision-bound certificate that gates version bumps and atomic releases.
 - Add canonical v1 event-sourced delta logging and session telemetry layer with typed channel multiplexing (reasoning, content, tool chunks), provider-aware KV cache telemetry normalization (Anthropic, OpenAI, DeepSeek, Gemini), and crash-safe stream replay.
 - Enforce a persisted, sequential audit of every canonical user requirement before issuing a revision- and requirement-bound completion certificate for mutating tasks.
 - Structure and domain-test code-index with comprehensive suites for file discovery security, AST chunk symbol extraction, hardware backend health matching, Qdrant client lifecycle, BM25 incremental indexing, RAG lifecycle transitions, search candidate ranking, multi-worker tasks, crash recovery, and error classification.
@@ -25,6 +44,106 @@
 
 ### Fixed
 
+- Stop terminally aborted sessions from restarting queued messages under a fresh provider signal.
+- Keep session JSONL and budget-ledger state consistent across append failures, durable directory creation, atomic publication, and corruption recovery.
+- Bind benchmark candidate versions to the complete paired orchestration and measurement closure.
+- Allow strictly increasing benchmark candidate versions with gaps in the candidate registry while rejecting rollbacks and duplicate bindings.
+- Keep benchmark runtime snapshots immutable while typechecking their coding-agent APIs against current source declarations.
+- Preserve task budgets across resumed and switched sessions, reject stale or escaped ledger writes, roll back failed replacements, and expose the public budget API.
+- Keep changed-line coverage checks working for large package diffs.
+- Defer package-manager path derivation until each matching representation is needed.
+- Reduce path-validation allocations while preserving lexical cache and catalog link checks.
+- Load packaged metadata beside standalone Bun executables and verify it before uploading release archives.
+- Harden compiled project-instruction caches, retries, concurrent publication, paged catalogs, and reader-tool discovery.
+- Select completion evidence automatically while keeping focused test boundaries, workspace freshness, and external-effect receipts independently bound.
+- Probe Core AI runtime artifacts for Apple Neural Engine loadability during installation, building immutable unique candidate generations and atomically promoting current pointers on probe success while deliberately retaining old generations.
+- Derive Core AI candidate directory locally within managed root and UUID child boundaries rather than parsing builder child stdout, tolerating non-protocol dependency chatter while failing closed on symlinked or invalid paths, preserving nonzero exit diagnostics, and relying on candidate worker probes for build correctness.
+- Preserve exact pending continuation and steering state through default provider-overflow compaction.
+- Freeze referenced specifications before mutation while deferring their semantic requirement definition until completion evidence is ready.
+- Freeze referenced specifications before mutation but defer exhaustive requirement definition until completion evidence is ready.
+- Clamp each model response to current prompt capacity without deadlocking full-window output models.
+- Preserve exact-match dynamic provider reasoning controls across repeated registration and refresh, and reject invalid model IDs before registry mutation.
+- Persist source-size gates across mutations and restore, require authoritative user overrides, and reject zero-exit runtime assertion failures as verification evidence.
+- Keep waiting for embedding requests to become idle after transient health-probe failures while respecting the overall deadline.
+- Keep faux-provider test streams isolated across resets and reloads, and clean failed harness construction.
+- Advertise the actual finish_work verification token field instead of the removed result field in agent prompts and usage documentation.
+- Allow finish_work without explicit verification_token after requirement audit passes, auto-populating token while continuing to block invalid tokens.
+- Update the locked transitive Nano ID dependency to a patched release that prevents zero-size custom generators from hanging.
+- Keep native tool failures monotonic through result hooks while tracking successful mutations from their native outcome.
+- Account exactly for text pricing modifiers and authenticated OpenRouter image metadata while rejecting incomplete rates, zero-usage sentinels, inconsistent totals, and ambiguous costs.
+- Updated published indexing documentation with the existing reinstall ownership and stale-lock recovery guidance.
+- Preserve configured Qdrant storage and serialize owner-bound indexing-service reuse across install and reinstall.
+- Restart the indexing daemon when reinstalling from a different canonical runtime checkout.
+- Return a failing process status for terminal errors and aborted responses in JSON print mode.
+- Expose the advertised p executable in local standalone release directories while preserving the upstream binary archive layout.
+- Keep macOS indexing fallbacks on Python versions supported by pinned Core ML dependencies.
+- Reconcile managed code indexing venv major.minor Python ABI before marker reuse or creation, removing only mismatched or broken venv directories to prevent ABI corruption.
+- Preflight compaction reserves the full response budget and keeps completed large tool calls atomic.
+- Keep Apple MPS indexing usable under safe unified-memory pressure without double-counting a dedicated VRAM reserve.
+- Record proof witnesses against a native tool-result snapshot before model-facing hooks can redact, mutate, or inject evidence.
+- Harden plan-mode read-only tools and roadmap delivery, and run subagents with source-bound trust, inherited runtime settings, and reliable process cleanup.
+- Freeze one behavioral completion checklist before mutation, with focused critical proof and controller-checked exact non-code artifacts.
+- Require complete and convergent requirements before implementation mutation, reject rootless cwd-qualified paths, and preserve task locality after truncated tool calls.
+- Preserve pending continuation instructions and restore user steering exactly once during compaction recovery.
+- Preserve every continued assistant segment and terminal error in text print-mode output.
+- Keep compiled project-rule routing anchored to structural shell actions instead of unrelated operand vocabulary.
+- Validate legacy benchmark authority before evidence projection and avoid replaying full requirement catalogs after rejected definition batches.
+- Give paired benchmark cells configurable completion headroom and an environment-isolated local Git baseline for current-revision evidence.
+- Correct the paired project-instruction benchmark launcher default root resolution to the repository root and explicitly include coding-agent in root biome formatting checks.
+- Recover large instruction compilation with scope-calibrated sparse always-on selection, one bounded typed retry, safe failure telemetry, verified reasoning disable, and exact cache invalidation.
+- Keep physical fallback paths out of logical readers, fully anchor provider-facing reader schemas, and retry compilation after reasoning-control metadata corrections.
+- Preserve one stable compiled-rule batch across queued turns and restarts, reject stale routes, and reserve a slot for the concrete mutating action.
+- Allow identity-bound read-only tools and safe macOS inspection commands when compiled project instructions fall back.
+- Keep trusted task-verification protocol calls outside compiled project-rule mutation routing.
+- Keep help and model-list metadata commands from starting project-instruction compilation or an agent session.
+- Prevent production-sized compiled project instructions from failing on context preflight or redundant classifications while preserving exact headings, whitespace, and structural rule semantics.
+- Keep evidence completion convergent with model-owned free-text checklists, exact external receipt binding, safe source discovery, and actionable verification diagnostics.
+- Preserve length-finished streamed responses and run compaction before their protocol-repair request.
+- Hide internal provider-continuation controls from fork, clone, and RPC message selection.
+- Keep provider-limited generation alive until completion without exposing internal continuation turns or executing partial tools.
+- Continue provider length-finished output safely in every completion mode without executing truncated tool calls.
+- Let a passing pytest node ID retire the matching failed name-filter attempt without hiding unrelated test failures.
+- Allow slow persisted Qdrant recovery and safely reclaim obsolete local index collections every 24 hours and at daemon startup.
+- Relink npm-backed p installations even when a PATH entry is a dangling symlink.
+- Fail reinstall early when a shell alias bypasses the managed p binary with a local checkout entrypoint.
+- Preflight every release package before publication, retain required shrinkwrap artifacts, and publish the code-index dependency before the CLI in lockstep releases.
+- Constrain invalid ignored-clause repairs to the controller-selected classification removal instead of accepting unrelated single-item edits.
+- Batch requirement verdict diagnostics and require atomic high-risk cases backed by selector-bound focused evidence through a safe literal-directory test wrapper.
+- Freeze explicitly referenced task specifications before mutation and require complete clause-mapped, source-bound verification evidence.
+- Keep execution, security, and trace context requirements normative while allowing standalone context labels to remain informational.
+- Report independent requirement-definition defects in one atomic deterministic rejection so agents can repair the full batch in one turn.
+- Prevent dense requirement definitions from looping on invalid draft coverage, compound atomic facets, dotted paths, acronym plurals, and the former 64-item ceiling.
+- Retain the best rejected requirement draft and preserve valid frozen definitions across pre-mutation task reclassification.
+- Preserve bounded sparse requirement-definition recovery across status checks and report repair progress accurately.
+- Converge atomic requirement definitions with deterministic coordinated facets and sparse fail-closed repairs.
+- Prevent stalled or duplicate requirement definitions and enforce controller-scoped proof selectors before broad tests.
+- Keep compiled instructions universal while preserving compatible configured model metadata across sparse dynamic provider discovery.
+- Derive focused corruption and final-byte proof policies for direct prompts and additional serialized artifact domains without cross-clause or cross-artifact matches.
+- Allow bounded sparse requirement repairs to submit up to 32 replacements, with synchronized model guidance and unchanged lineage and global count limits.
+- Bound sparse requirement-repair fan-out across each call and rejected-definition lineage.
+- Return each rejected requirement repair with a fresh revision and its complete current indexed batch, without a separate status roundtrip.
+- Bound repeated non-improving complete requirement definitions while preserving strictly improving recovery.
+- Keep sparse requirement repairs index-safe and preserve privacy-safe diagnostic lineage in benchmark progress evidence.
+- Enforce rejected-definition next actions across audit and verification tools.
+- Keep compact rejected requirement drafts repairable after worse or invalid lineage-overflow candidates and preserve scalar and collection boundaries during validation.
+- Terminate requirement-audit tool batches when definition recovery is exhausted.
+- Reject unsafe referenced-source instructions hidden behind imperative, Markdown, label, or prerequisite wrappers while preserving protective and quoted prose.
+- Make tool-output guidance capability-aware and harden completion and release gates against malformed state and alternate Git invocations.
+- Accept equivalent word and digit decimals in requirement checks without inventing a separate zero constraint or losing subsequent real constraints.
+- Block captured extension contexts during provisional session replacement while preserving their usability after rollback.
+- Recover rejected requirement definitions through one atomic repair item per call, including prompt-only tasks before mutation.
+- Make source development CLI and benchmark typecheck independent of stale or missing built dist artifacts.
+- Keep verification recovery compaction-safe, preserve stable requirement-source identity, enforce syntax-aware high-risk provenance, classify mixed task intent by requested effect, retire only manifest-proven missing test scripts, and make rejected definitions durable singular repairs with deterministic duplicate consolidation.
+- Require project-wide, workspace-bound compiler execution before accepting typecheck completion evidence.
+- Require bounded test-authoring batches to pass focused verification before more tests, publication, or successful completion.
+- Preserve shell-wrapper semantics when validating test evidence.
+- Exclude ignored dependency and generated-output tests from workspace mutation snapshots while preserving ignored project tests.
+- Treat thrown result hooks as failed verification evidence without hiding successful native mutations.
+- Expose whether a tool result was rejected before execution so verification evidence cannot mistake guardrail blocks for completed mutations.
+- Complete trusted audit verdicts without a redundant provider turn, preserve benchmark timeout and provider failures, and bound cumulative tool-argument parsing and JSON stream output.
+- Preserve completed verification across undeclared tool effects while keeping explicit completion and substantive follow-ups live.
+- Recognize executable test and typecheck commands consistently across completion evidence gates.
+- Resolve stale verification failures by parsed test scope and keep verification commands' real exit status authoritative.
 - Preserve exact ordered user prompts and active audit state across clarification, evidence collection, compaction, and finalization; invalidate completion readiness when later verification fails.
 - Forward `rejectUnauthorized: false` to Undici's global proxy agent when `NODE_TLS_REJECT_UNAUTHORIZED=0` to support custom self-signed HTTPS endpoints.
 - Support optional `enableTray` setting in code-index RAG configuration parser and types.

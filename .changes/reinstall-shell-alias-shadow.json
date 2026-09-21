@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "Fixed",
-  "summary": "Fail reinstall early when a shell alias bypasses the managed p binary with a local checkout entrypoint."
-}

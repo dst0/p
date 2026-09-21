@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "packages": ["coding-agent"],
-  "type": "None",
-  "reason": "Add certified P, Pi, and Kilo comparisons with sandboxed containment, private exclusive output, positional auto-injection proof, strict runtime validation, accumulated streamed cost, safe cleanup, and derived deadlines."
-}
