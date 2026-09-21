@@ -94,3 +94,15 @@ test("binary build verifies standalone package metadata before release upload", 
   assert.ok(verification.indexOf("bun --version") < verification.indexOf("node ../../node_modules"));
   assert.ok(verificationStart < build.indexOf("name: Create GitHub Release and upload binaries"));
 });
+
+test("validation skips optional local LLM tests only when Ollama is unavailable", () => {
+  const validate = job("validate", "build");
+  const testStart = validate.indexOf("name: Test all, including configured live tests");
+  assert.notEqual(testStart, -1, "full test step must exist");
+  const testEnd = validate.indexOf("\n      - name:", testStart + 1);
+  const testStep = validate.slice(testStart, testEnd === -1 ? validate.length : testEnd);
+  assert.match(testStep, /curl --fail --silent --show-error --max-time 2 http:\/\/127\.0\.0\.1:11434\/api\/tags/);
+  assert.match(testStep, /npm test/);
+  assert.match(testStep, /P_NO_LOCAL_LLM=1 npm test/);
+  assert.ok(testStep.indexOf("npm test") < testStep.indexOf("P_NO_LOCAL_LLM=1 npm test"));
+});

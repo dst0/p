@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep release validation deterministic when an Ollama binary is installed but its optional local daemon is unavailable."
+}
