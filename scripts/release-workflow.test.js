@@ -139,3 +139,23 @@ test("npm publish tests use the same optional local LLM gate", () => {
   assert.match(testStep, /P_NO_LOCAL_LLM=1 npm test/);
   assert.ok(testStep.indexOf("npm test") < testStep.indexOf("P_NO_LOCAL_LLM=1 npm test"));
 });
+
+test("release jobs install the pinned Python test dependency before tests", () => {
+  for (const [name, nextName] of [
+    ["validate", "build"],
+    ["publish-npm", undefined],
+  ]) {
+    const releaseJob = job(name, nextName);
+    const installStart = releaseJob.indexOf("name: Install Python test dependencies");
+    const testStart = releaseJob.indexOf("name: Test");
+    assert.notEqual(installStart, -1, `${name} must install Python test dependencies`);
+    assert.notEqual(testStart, -1, `${name} test step must exist`);
+    assert.ok(installStart < testStart, `${name} must install Python dependencies before tests`);
+    const installEnd = releaseJob.indexOf("\n      - name:", installStart + 1);
+    const installStep = releaseJob.slice(installStart, installEnd === -1 ? releaseJob.length : installEnd);
+    assert.match(
+      installStep,
+      /python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-cache-dir ['\"]?numpy==2\.5\.1['\"]?/,
+    );
+  }
+});
