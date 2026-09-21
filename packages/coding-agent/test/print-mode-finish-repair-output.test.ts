@@ -303,7 +303,7 @@ describe("print-mode repaired final response", () => {
       createAssistantMessage({
         text: "Candidate answer",
         stopReason: "toolUse",
-        toolCall: { id: "test", name: "some_tool", arguments: {} }
+        toolCall: { id: "test", name: "some_tool", arguments: {} },
       }),
       createCompletionProtocolRepairMessage(MISSING_FINISH_REASON),
     ];
