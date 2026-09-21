@@ -73,7 +73,7 @@
     }
   },
   "dependencies": {
-    "@vitest/coverage-v8": "4.1.8",
-    "vitest": "4.1.8"
+    "@vitest/coverage-v8": "4.1.11",
+    "vitest": "4.1.11"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "ai", "code-index", "coding-agent"],
+  "type": "None",
+  "reason": "Update the development-only Vitest toolchain to 4.1.11 to remove its moderate redirect-mock path-traversal and arbitrary-file-read advisory without changing published runtime behavior."
+}
