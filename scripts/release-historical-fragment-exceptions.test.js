@@ -3,17 +3,19 @@ import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import test from "node:test";
 
+import { getCurrentChangeFragments } from "./release-change-fragments.js";
 import { affectedChangelogPackages } from "./release-changelog-audit.js";
 import { createReleaseFlowFixture, write } from "./release-flow-test-fixture.js";
 import { parseReleaseChangeFragment } from "./release-fragment-parser.js";
 import {
+  getHistoricalFragmentPackageAliases,
   getHistoricalReleaseFragmentException,
   getHistoricalReleaseFragmentExceptionCommits,
   matchesHistoricalLegacyFragment,
 } from "./release-historical-fragment-exceptions.js";
 import { computeReleaseInputHash, releaseInputPaths } from "./release-inputs.js";
 
-// Captured from the seven reviewed Git commits; no branch or network dependency in tests.
+// Captured from the eleven reviewed Git commits; no branch or network dependency in tests.
 const scopes = JSON.parse(readFileSync(new URL("./fixtures/release-historical-fragment-scopes.json", import.meta.url), "utf8"));
 
 test("binds every historical exception to its full commit and complete ordered path set", () => {
@@ -78,6 +80,43 @@ test("binds exception and parser source changes into the release certificate inp
       write(fixture.repoRoot, path, "export const changedReleasePolicy = true;\n");
       assert.notEqual(computeReleaseInputHash(fixture.repoRoot), before);
     }
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("maps the reviewed code-index fragment to coding-agent only for its exact committed bytes", () => {
+  const aliased = scopes.filter(({ fragments }) =>
+    fragments.some(({ content }) => JSON.parse(content).packages.includes("code-index")),
+  );
+  assert.equal(aliased.length, 1);
+  const [{ commit, paths, fragments }] = aliased;
+  const { path, content } = fragments[0];
+  const hash = createHash("sha256").update(content.trim()).digest("hex");
+  const aliases = { "code-index": "coding-agent" };
+  const exception = getHistoricalReleaseFragmentException(commit, paths);
+  assert.deepEqual(exception.aliasedFragment, { path, contentHash: hash, packageAliases: aliases });
+  exception.aliasedFragment.packageAliases["code-index"] = "tui";
+  assert.deepEqual(getHistoricalReleaseFragmentException(commit, paths).aliasedFragment.packageAliases, aliases);
+  assert.throws(() => parseReleaseChangeFragment(path, content), /unknown changelog package/);
+  assert.deepEqual(parseReleaseChangeFragment(path, content, false, aliases).packages, ["agent", "ai", "coding-agent"]);
+  assert.throws(() => parseReleaseChangeFragment(path, content, false, { "code-index": "site" }), /unknown changelog package/);
+  const nested = content.replace('"code-index"', '["code-index"]');
+  assert.throws(() => parseReleaseChangeFragment(path, nested, false, aliases), /unknown changelog package/);
+  assert.deepEqual(getHistoricalFragmentPackageAliases(path, hash), aliases);
+  assert.equal(getHistoricalFragmentPackageAliases(`${path}.copy`, hash), undefined);
+  assert.equal(getHistoricalFragmentPackageAliases(path, `${hash.slice(1)}0`), undefined);
+  getHistoricalFragmentPackageAliases(path, hash)["code-index"] = "tui";
+  assert.deepEqual(getHistoricalFragmentPackageAliases(path, hash), aliases);
+
+  const fixture = createReleaseFlowFixture();
+  try {
+    write(fixture.repoRoot, path, content);
+    const current = getCurrentChangeFragments(fixture.repoRoot).find((fragment) => fragment.path === path);
+    assert.deepEqual(current.packages, ["agent", "ai", "coding-agent"]);
+    assert.equal(current.contentHash, hash);
+    write(fixture.repoRoot, path, content.replace("4.1.11", "4.1.12"));
+    assert.throws(() => getCurrentChangeFragments(fixture.repoRoot), /unknown changelog package/);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

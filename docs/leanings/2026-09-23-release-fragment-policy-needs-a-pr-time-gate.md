@@ -1,0 +1,40 @@
+# 2026-09-23 — Release-note fragment policy needs a PR-time gate
+
+- **Status:** Resolved
+- **Task/context:** Unblock the next release audit after the `v5.0.2` release on `main`.
+- **Unexpected observation or failure:** Three automated Jules "Bolt" performance PRs (#119, #121, #122) changed `coding-agent` and `tui` source without a `.changes/*.json` fragment, and PR #134 added `.changes/fix-vitest-audit.json` naming `code-index`, which owns no changelog. All four merged with a green required `build-check-test` check, but the release audit rejects each commit.
+- **Evidence:** A read-only call to `createReleaseAuditEvidence(repoRoot, "5.0.3")` (no certificate written) failed with `35ec516238beeb18360d7550a91612d8cf4809f7: material release changes require a release-note fragment in the same commit`. `parseReleaseChangeFragment` rejects the #134 fragment with `release-note fragment names an unknown changelog package`. Replaying the new PR gate against each merged commit and its parent flags exactly #119, #121, #122 and #134 and passes #130, #131 and #133.
+- **Approaches tried:**
+  - **Attempt:** Add catch-up fragments in a later commit.
+    - **Outcome:** Did not work.
+    - **Why:** `createChangeFragmentEvidence` only credits fragments added in the same first-parent commit, and `AGENTS.md` forbids covering an unrelated earlier commit with a later fragment.
+  - **Attempt:** Rewrite `.changes/fix-vitest-audit.json` to drop `code-index`.
+    - **Outcome:** Did not work.
+    - **Why:** The audit still parses the fragment as introduced by #134 and rejects the unknown package before any rewrite exception applies; a rewrite would also need its own exception.
+  - **Attempt:** Add reviewed historical exceptions bound to the full commit ID, path count, changed-path hash and affected packages. Use `allowedMissingPackages` for the three Bolt commits. Add an `aliasedFragment` for #134 that maps `code-index` to `coding-agent` only for the exact committed fragment bytes.
+    - **Outcome:** Worked.
+    - **Why:** This is the existing historical-exception mechanism, with one narrowly bound extension for a non-canonical package name.
+- **Root cause:** Fragment coverage was enforced only at release time: `scripts/release.js`, `scripts/release-audit.js` and the tag workflow. The required PR check (`.github/workflows/ci.yml`) ran build, check, version policy and tests, but no fragment rule. The release-audit unit tests only exercise temporary fixture repositories, so they pass whatever the real history contains. The Bolt PRs were opened under the maintainer's account, so contributor gating was irrelevant.
+- **Resolution:**
+  - Added `scripts/release-pr-fragment-policy.js`, run by the required `build-check-test` job on every PR. `main` allows only squash merges, so the gate checks the squash diff: `HEAD^1..HEAD` on GitHub's `refs/pull/N/merge` checkout (`pull_request.base.sha` can be stale), or the merge-base diff on a PR-head checkout.
+  - It applies the audit's material-path, affected-package and strict-parser rules to the raw committed bytes.
+  - It also rejects:
+    - edits or deletions of existing fragments
+    - nested or empty fragment names
+    - fragments that start with a byte-order mark
+    - deleting `.changes/config.json`
+  - An adversarial review showed Git quotes non-ASCII paths unless `-z` is used, which let them escape the material-path rules. Both the gate and the audit's per-commit `diff-tree` now use `-z`.
+  - Added the four reviewed historical exceptions and their captured scopes.
+- **Verification:**
+  - `node --test` on the fragment, provenance, historical-exception and PR-policy tests. The regressions for non-ASCII paths and for the commit-bound alias fail without their fixes.
+  - `npm run test:release-audit` passes.
+  - In a disposable clone, the gate replayed against each merged commit flags exactly #119, #121, #122 and #134, and passes #130, #131, #133, #136 and #137.
+  - A read-only `createReleaseAuditEvidence` probe on the final branch passes, and no certificate was written.
+- **Prevention/follow-up:**
+  - The PR gate runs inside the required status check. Bot or agent PRs must add a fragment (`type: "None"` with a specific reason for behavior-preserving work) before they can merge.
+  - Remaining gaps:
+    - A PR runs its own copy of the gate, so it can weaken it; the release audit stays the backstop.
+    - Ruleset bypass pushes to `main` are not gated.
+    - `createChangelogEvidence` and the audit's pre-policy legacy diff still list paths without `-z`.
+- **Reusable learning:** A release-time policy that audits every merged commit needs an equivalent merge-time gate. Otherwise violations are found only at release, when history can no longer be amended and only reviewed exceptions can repair it.
+- **References:** `scripts/release-pr-fragment-policy.js`, `scripts/release-pr-fragment-policy.test.js`, `scripts/release-historical-fragment-exceptions.js`, `scripts/fixtures/release-historical-fragment-scopes.json`, PRs #119, #121, #122, #134.
