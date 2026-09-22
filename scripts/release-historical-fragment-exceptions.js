@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+// Closed list: only commits merged before the PR fragment gate (scripts/release-pr-fragment-policy.js).
+// Post-gate commits must carry their own fragment; reject new entries in review.
 const HISTORICAL_RELEASE_FRAGMENT_EXCEPTIONS = Object.freeze([
   Object.freeze({
     commit: "56eeb58cf67bd906677e9ba335ff97fef6352374",
