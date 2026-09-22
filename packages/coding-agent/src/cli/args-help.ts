@@ -57,7 +57,8 @@ ${chalk.bold("Options:")}
   --budget <policy>              unlimited | requests:N | tokens:N | usd:N (session budget)
   --completion-mode <mode>       Completion mode: explicit (default), hybrid, implicit
   --project-instructions <mode>  Project rules: compiled (default), legacy, or off
-  --task-verification <mode>     Task verification: evidence (default), audit (experimental), or off
+  --task-verification <mode>     Verification: auto (default: light, strict for code+tests), light, strict, off;
+                                 evidence/audit force strict with that engine (audit is experimental)
   --project-instruction-compiler-model <provider/id>  Dedicated compiler model (default: task model)
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

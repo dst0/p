@@ -17,7 +17,7 @@ import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
-import type { TaskVerificationMode } from "../../src/core/task-verification/mode.ts";
+import type { TaskVerificationSelection } from "../../src/core/task-verification/verification-policy.ts";
 import {
   installTaskVerificationRuntime,
   prepareTaskVerificationRuntime,
@@ -74,7 +74,7 @@ export interface HarnessOptions {
   extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
   withConfiguredAuth?: boolean;
   completionMode?: CompletionMode;
-  taskVerificationMode?: TaskVerificationMode;
+  taskVerificationMode?: TaskVerificationSelection;
 }
 
 export interface Harness {

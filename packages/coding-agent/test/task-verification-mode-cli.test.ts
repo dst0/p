@@ -9,19 +9,15 @@ describe("task verification mode CLI", () => {
     expect(publicModes).toEqual(["evidence", "audit", "off"]);
   });
 
-  it.each(["evidence", "audit", "off"] as const)("parses %s", (mode) => {
+  it.each(["auto", "light", "strict", "off", "evidence", "audit"] as const)("parses %s", (mode) => {
     expect(parseArgs(["--task-verification", mode]).taskVerificationMode).toBe(mode);
   });
 
   it("reports invalid and missing values as startup errors", () => {
-    expect(parseArgs(["--task-verification", "full"]).diagnostics).toContainEqual({
-      type: "error",
-      message: "--task-verification requires one of: evidence, audit, off",
-    });
-    expect(parseArgs(["--task-verification"]).diagnostics).toContainEqual({
-      type: "error",
-      message: "--task-verification requires one of: evidence, audit, off",
-    });
+    const message = "--task-verification requires one of: auto, light, strict, off, evidence, audit";
+    expect(parseArgs(["--task-verification", "full"]).diagnostics).toContainEqual({ type: "error", message });
+    expect(parseArgs(["--task-verification"]).diagnostics).toContainEqual({ type: "error", message });
+    expect(parseArgs(["--task-verification", "--print"]).diagnostics).toContainEqual({ type: "error", message });
   });
 
   it("passes the CLI selection into session options independently of other modes", () => {
@@ -42,13 +38,15 @@ describe("task verification mode CLI", () => {
     });
   });
 
-  it("documents evidence as the default and audit as experimental", () => {
+  it("documents auto as the default and the legacy engine selections", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
       printHelp();
-      expect(log.mock.calls[0]?.[0]).toContain(
-        "--task-verification <mode>     Task verification: evidence (default), audit (experimental), or off",
+      const help = log.mock.calls[0]?.[0];
+      expect(help).toContain(
+        "--task-verification <mode>     Verification: auto (default: light, strict for code+tests), light, strict, off;",
       );
+      expect(help).toContain("evidence/audit force strict with that engine (audit is experimental)");
     } finally {
       log.mockRestore();
     }

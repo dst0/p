@@ -6,6 +6,11 @@ import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
 import {
+  resolveTaskVerificationConfiguration,
+  type TaskVerificationSelection,
+  taskVerificationEngineMode,
+} from "./task-verification/verification-policy.ts";
+import {
   finalizeTaskVerificationCompletion,
   taskVerificationFinalizerBatchError,
 } from "./task-verification/verified-completion-runtime.ts";
@@ -18,7 +23,7 @@ import {
 import { resolveTaskVerificationSessionPolicy } from "./task-verification-session-policy.ts";
 
 interface TaskVerificationRuntimeOptions {
-  taskVerificationMode?: TaskVerificationMode;
+  taskVerificationMode?: TaskVerificationSelection;
   completionMode?: CompletionMode;
   tools?: string[];
   excludeTools?: string[];
@@ -77,7 +82,12 @@ export function prepareTaskVerificationRuntime(
   settingsManager: SettingsManager,
 ): PreparedTaskVerificationRuntime {
   assertReservedTaskVerificationToolNames(options.customTools ?? []);
-  const configuredMode = options.taskVerificationMode ?? settingsManager.getTaskVerificationMode();
+  const configuredMode = taskVerificationEngineMode(
+    resolveTaskVerificationConfiguration(
+      options.taskVerificationMode,
+      settingsManager.getTaskVerificationConfiguration(),
+    ),
+  );
   const policy = resolveTaskVerificationSessionPolicy({
     mode: configuredMode,
     activeToolEffects: options.activeToolEffects,

@@ -5,7 +5,7 @@ import { collectInitialActiveToolEffects, createSdkToolEffectInventory } from ".
 import { resolveSdkToolPolicy } from "./sdk-tool-policy.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
-import type { TaskVerificationMode } from "./task-verification/mode.ts";
+import type { TaskVerificationSelection } from "./task-verification/verification-policy.ts";
 import {
   assertReservedTaskVerificationToolNames,
   type PreparedTaskVerificationRuntime,
@@ -13,7 +13,7 @@ import {
 } from "./task-verification-session-runtime.ts";
 
 interface SdkSessionPolicyOptions {
-  taskVerificationMode?: TaskVerificationMode;
+  taskVerificationMode?: TaskVerificationSelection;
   completionMode?: CompletionMode;
   tools?: string[];
   excludeTools?: string[];
