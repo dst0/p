@@ -12,6 +12,11 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
 
 import { createReleaseAuditEvidence } from "./release-audit-evidence.js";
+import {
+  assertFreshBenchmarkCertification,
+  requireBenchmarkCertification,
+  validateBenchmarkCertification,
+} from "./release-benchmark-certification.js";
 import { computeReleaseInputHash, releaseInputPaths } from "./release-inputs.js";
 import { assertReleaseTargetVersion } from "./release-target-policy.js";
 
@@ -123,6 +128,7 @@ export function releaseCertificatePayload(state) {
     inputPaths: state.inputPaths,
     evidenceHash: state.evidenceHash,
     allowMajor: state.allowMajor,
+    benchmarkCertificationId: state.benchmarkCertification?.certificationId,
   };
 }
 
@@ -152,6 +158,14 @@ export function assertReleaseCertificateAuthority(repoRoot, state) {
     state.targetVersion,
     { allowMajor: state.allowMajor },
   );
+  if (state.allowMajor) {
+    const benchmarkCertification = validateBenchmarkCertification(state.benchmarkCertification, {
+      targetVersion: state.targetVersion,
+      baseSha: state.baseSha,
+      originMainSha: state.originMainSha,
+    });
+    assertFreshBenchmarkCertification(benchmarkCertification);
+  }
 }
 
 function invalid(reason) {
@@ -179,6 +193,9 @@ export function certifyReleaseAudit(repoRoot, targetVersion, options = {}) {
   const allowMajor = options.allowMajor === true;
   assertTarget(repoRoot, targetVersion, { allowMajor });
   const revision = assertCleanMain(repoRoot);
+  const benchmarkCertification = allowMajor
+    ? requireBenchmarkCertification(repoRoot, targetVersion, revision)
+    : undefined;
   const evidence = createReleaseAuditEvidence(repoRoot, targetVersion);
   const evidenceHash = computeReleaseEvidenceHash(evidence);
   const evidenceReady = writeReleaseAuditState(repoRoot, {
@@ -192,6 +209,7 @@ export function certifyReleaseAudit(repoRoot, targetVersion, options = {}) {
     evidenceHash,
     evidence,
     allowMajor,
+    ...(benchmarkCertification ? { benchmarkCertification } : {}),
     auditedAt: new Date().toISOString(),
   });
   const certificateId = computeReleaseCertificateId(evidenceReady);

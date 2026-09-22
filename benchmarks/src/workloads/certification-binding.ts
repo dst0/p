@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { hashRuntimeSnapshot, hashSnapshotDirectory } from "../harness/runtime-snapshot.ts";
+import { recheckSealedHoldoutPlan } from "./certification-holdout-plan.ts";
+import { type CertifiedModelConfiguration, recheckCertifiedModelConfiguration } from "./certification-model-config.ts";
 import type { CertifiedInstructionReceipt } from "./certification-preflight.ts";
 
 export interface CertifiedExecutableBinding {
@@ -11,17 +13,22 @@ export interface CertifiedExecutableBinding {
   sha256: string;
 }
 
-export interface CertifiedHarnessBinding {
+export interface CertifiedHarnessCoreBinding {
   node: CertifiedExecutableBinding;
   pSnapshot: CertifiedExecutableBinding;
   pi: CertifiedExecutableBinding;
   kilo: CertifiedExecutableBinding;
+  modelConfiguration: CertifiedModelConfiguration;
   projectInstructions: { path: string; sha256: string; receiptSha256?: string };
-  evaluator?: { path: string; sha256: string };
   receipts?: CertifiedInstructionReceipt[];
 }
 
-export interface CertifiedHarnessInputs {
+export interface CertifiedHarnessBinding extends CertifiedHarnessCoreBinding {
+  evaluator: { path: string; sha256: string };
+  holdoutSha256: string;
+}
+
+export interface CertifiedHarnessCoreInputs {
   nodeExecutable?: string;
   nodeVersion?: string;
   pSnapshotPath: string;
@@ -31,12 +38,17 @@ export interface CertifiedHarnessInputs {
   piVersion?: string;
   kiloExecutable?: string;
   kiloVersion?: string;
+  modelConfiguration?: CertifiedModelConfiguration;
   projectInstructionsFile: string;
   projectInstructionsSha256?: string;
   receiptSha256?: string;
-  evaluatorPath?: string;
-  evaluatorSha256?: string;
   receipts?: CertifiedInstructionReceipt[];
+}
+
+export interface CertifiedHarnessInputs extends CertifiedHarnessCoreInputs {
+  evaluatorPath: string;
+  evaluatorSha256: string;
+  holdoutSha256: string;
 }
 
 const ZERO_HASH = "0".repeat(64);
@@ -87,7 +99,7 @@ function bindExecutable(
   return { path: binaryPath, version, sha256 };
 }
 
-export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedHarnessBinding {
+export function bindCertifiedHarnessCore(inputs: CertifiedHarnessCoreInputs): CertifiedHarnessCoreBinding {
   const nodeExecutable = inputs.nodeExecutable ?? process.execPath;
   if (!existsSync(nodeExecutable)) {
     throw new Error("Missing Node executable; certified mode requires a resolved Node binary");
@@ -124,6 +136,9 @@ export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedH
   if (!existsSync(candidatePkgPath)) {
     throw new Error(`Missing package manifest in P snapshot: ${candidatePkgPath}`);
   }
+  if (hashRuntimeSnapshot(pSnapshotPath, nodePath) !== pSnapshotSha256) {
+    throw new Error("Candidate P snapshot changed before certified core binding");
+  }
   const pkgManifest: unknown = JSON.parse(readFileSync(candidatePkgPath, "utf8"));
   const pVersion =
     typeof pkgManifest === "object" && pkgManifest !== null
@@ -143,6 +158,9 @@ export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedH
 
   const piBinding = bindExecutable(inputs.piExecutable, "pi", inputs.piVersion);
   const kiloBinding = bindExecutable(inputs.kiloExecutable, "kilo", inputs.kiloVersion);
+  if (!inputs.modelConfiguration || inputs.modelConfiguration.sha256 === ZERO_HASH) {
+    throw new Error("Missing certified model configuration binding");
+  }
 
   if (!existsSync(inputs.projectInstructionsFile)) {
     throw new Error(`Missing project instructions file: ${inputs.projectInstructionsFile}`);
@@ -153,15 +171,8 @@ export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedH
     throw new Error("Invalid project instructions hash placeholder");
   }
 
-  let evaluatorBinding: { path: string; sha256: string } | undefined;
-  if (inputs.evaluatorPath) {
-    if (!existsSync(inputs.evaluatorPath)) throw new Error("Missing evaluator freeze snapshot path");
-    const evaluatorPath = realpathSync(inputs.evaluatorPath);
-    const evaluatorSha256 = inputs.evaluatorSha256 ?? hashSnapshotDirectory(evaluatorPath);
-    if (!evaluatorSha256 || evaluatorSha256 === ZERO_HASH) {
-      throw new Error("Invalid evaluator freeze hash placeholder");
-    }
-    evaluatorBinding = { path: evaluatorPath, sha256: evaluatorSha256 };
+  if (inputs.projectInstructionsSha256 && inputs.projectInstructionsSha256 !== instructionsSha) {
+    throw new Error("Project instructions changed before certified core binding");
   }
 
   return {
@@ -169,18 +180,39 @@ export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedH
     pSnapshot: { path: pSnapshotPath, version: pVersion, sha256: pSnapshotSha256 },
     pi: piBinding,
     kilo: kiloBinding,
+    modelConfiguration: inputs.modelConfiguration,
     projectInstructions: {
       path: instructionsPath,
       sha256: inputs.projectInstructionsSha256 ?? instructionsSha,
       receiptSha256: inputs.receiptSha256,
     },
-    ...(evaluatorBinding ? { evaluator: evaluatorBinding } : {}),
     ...(inputs.receipts ? { receipts: inputs.receipts } : {}),
   };
 }
 
-export function recheckCertifiedHarness(
-  binding: CertifiedHarnessBinding,
+export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedHarnessBinding {
+  const core = bindCertifiedHarnessCore(inputs);
+  if (!inputs.evaluatorPath || !existsSync(inputs.evaluatorPath)) {
+    throw new Error("Missing evaluator freeze snapshot path");
+  }
+  const evaluatorPath = realpathSync(inputs.evaluatorPath);
+  const evaluatorSha256 = hashSnapshotDirectory(evaluatorPath);
+  if (!inputs.evaluatorSha256 || inputs.evaluatorSha256 !== evaluatorSha256 || evaluatorSha256 === ZERO_HASH) {
+    throw new Error("Evaluator freeze snapshot changed before final certified binding");
+  }
+  if (!inputs.holdoutSha256 || !/^[a-f0-9]{64}$/u.test(inputs.holdoutSha256) || inputs.holdoutSha256 === ZERO_HASH) {
+    throw new Error("Missing sealed holdout hash in final certified binding");
+  }
+  recheckSealedHoldoutPlan(
+    { path: evaluatorPath, sha256: evaluatorSha256 },
+    core.pSnapshot.sha256,
+    inputs.holdoutSha256,
+  );
+  return { ...core, evaluator: { path: evaluatorPath, sha256: evaluatorSha256 }, holdoutSha256: inputs.holdoutSha256 };
+}
+
+export function recheckCertifiedHarnessCore(
+  binding: CertifiedHarnessCoreBinding,
   pSnapshotPath: string,
   expectedSnapshotSha256: string,
 ): void {
@@ -209,14 +241,7 @@ export function recheckCertifiedHarness(
   ) {
     throw new Error("Project instructions content changed before certification publishing");
   }
-  if (binding.evaluator) {
-    if (
-      binding.evaluator.sha256 === ZERO_HASH ||
-      hashSnapshotDirectory(binding.evaluator.path) !== binding.evaluator.sha256
-    ) {
-      throw new Error("Evaluator freeze fixtures changed before certification publishing");
-    }
-  }
+  recheckCertifiedModelConfiguration(binding.modelConfiguration);
   if (binding.receipts) {
     for (const receipt of binding.receipts) {
       if (
@@ -227,6 +252,21 @@ export function recheckCertifiedHarness(
       }
     }
   }
+}
+
+export function recheckCertifiedHarness(
+  binding: CertifiedHarnessBinding,
+  pSnapshotPath: string,
+  expectedSnapshotSha256: string,
+): void {
+  recheckCertifiedHarnessCore(binding, pSnapshotPath, expectedSnapshotSha256);
+  if (
+    binding.evaluator.sha256 === ZERO_HASH ||
+    hashSnapshotDirectory(binding.evaluator.path) !== binding.evaluator.sha256
+  ) {
+    throw new Error("Evaluator freeze fixtures changed before certification publishing");
+  }
+  recheckSealedHoldoutPlan(binding.evaluator, binding.pSnapshot.sha256, binding.holdoutSha256);
 }
 
 export function counterbalanceAgentOrder<T>(agents: readonly T[], runNumber: number, taskIndex: number): T[] {
@@ -254,18 +294,4 @@ export function planRunCells<T, Task>(
     }
   }
   return cells;
-}
-
-export function formatCertificationReport(outcome: { passed: boolean; failures: readonly string[] }): string {
-  let section = "## Certification Results\n\n";
-  if (outcome.passed) {
-    section += "**Result: PASSED**\n\nAll certification requirements and baseline comparison thresholds met.\n\n";
-  } else {
-    section += "**Result: FAILED**\n\nCertification failed closed on the following requirements:\n\n";
-    for (const failure of outcome.failures) {
-      section += `- ${failure}\n`;
-    }
-    section += "\n";
-  }
-  return section;
 }

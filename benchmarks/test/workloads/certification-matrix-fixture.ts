@@ -1,4 +1,5 @@
 import type { BenchmarkRowLike } from "../../src/workloads/certification.ts";
+import { certifiedTaskMaxScoreFor } from "../../src/workloads/certified-task-score-policy.ts";
 import { benchmarkTasks } from "../../src/workloads/task-registry.ts";
 
 export interface SyntheticRowOptions {
@@ -12,6 +13,7 @@ export interface SyntheticRowOptions {
   pCost?: number;
   baselineCost?: number;
   pScoreFraction?: number;
+  baselineScoreDelta?: number;
   pPenalty?: number;
   pNudges?: number;
   modifyCell?: (row: BenchmarkRowLike) => BenchmarkRowLike | undefined;
@@ -31,9 +33,11 @@ export function createSyntheticCertifiedMatrix(options: SyntheticRowOptions = {}
         const duration = isP ? (options.pDurationMs ?? 900) : (options.baselineDurationMs ?? 1000);
         const tokens = isP ? (options.pTokens ?? 180) : (options.baselineTokens ?? 200);
         const costAmount = isP ? (options.pCost ?? 0.04) : (options.baselineCost ?? 0.05);
-        const maxScore = task.maxScore;
-        const scoreFraction = isP ? (options.pScoreFraction ?? 1.0) : 1.0;
-        const score = Math.round(maxScore * scoreFraction);
+        const maxScore = certifiedTaskMaxScoreFor(task.id);
+        if (maxScore === undefined) throw new Error(`Missing certified maximum for ${task.id}`);
+        const score = isP
+          ? Math.round(maxScore * (options.pScoreFraction ?? 1.0))
+          : Math.max(0, maxScore - (options.baselineScoreDelta ?? 1));
         const penalty = isP ? (options.pPenalty ?? 0) : 0;
         const nudges = isP ? (options.pNudges ?? 0) : 0;
 
@@ -62,7 +66,7 @@ export function createSyntheticCertifiedMatrix(options: SyntheticRowOptions = {}
             responseModels: [model],
           },
           quality: {
-            passed: score === maxScore && penalty === 0,
+            passed: isP ? score === maxScore && penalty === 0 : true,
             score: Math.max(0, score - penalty),
             maxScore,
             penalty,

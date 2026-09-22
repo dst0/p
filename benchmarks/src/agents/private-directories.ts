@@ -2,6 +2,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { copyBenchmarkAuthSource } from "../harness/auth-source.ts";
+import { certifiedUnlimitedAgentSettings } from "../workloads/certification-resource-policy.ts";
 
 export interface BenchmarkAgentDirectoryOptions {
   modelsFile?: string;
@@ -36,11 +37,9 @@ export function createBenchmarkAgentDirectories(
       mkdirSync(dir, { recursive: true });
       copyOptionalPrivateFile(options.modelsFile, join(dir, "models.json"));
       copyBenchmarkAuthSource(options.authFile, join(dir, "auth.json"));
-      if (agent === "p") {
-        writeFileSync(join(dir, "settings.json"), `${JSON.stringify({ runBudget: { mode: "unlimited" } })}\n`, {
-          mode: 0o600,
-        });
-      }
+      writeFileSync(join(dir, "settings.json"), `${JSON.stringify(certifiedUnlimitedAgentSettings)}\n`, {
+        mode: 0o600,
+      });
       dirs[agent] = dir;
     }
     const kiloDir = join(root, "kilo");

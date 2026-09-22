@@ -19,5 +19,5 @@ export function isAllowedReleaseMutationPath(repoRoot, path) {
   if (/^\.changes\/[^/]+\.json$/.test(path) && path !== ".changes/config.json") {
     return true;
   }
-  return /^release-certificates\/v\d+\.\d+\.\d+\.json\.br$/.test(path);
+  return /^release-certificates\/v\d+\.\d+\.\d+(?:\.json|-benchmark-(?:results\.json|report\.md))\.br$/.test(path);
 }

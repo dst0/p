@@ -41,10 +41,14 @@ function createFixture() {
     "# Changelog\n\n## [Unreleased]\n\n## [0.4.0] - 2026-08-01\n",
   );
   for (const path of [
+    "benchmarks/src/workloads/certified-task-score-policy.ts",
+    "benchmarks/src/workloads/release-benchmark-base.ts",
     "scripts/release.js",
     "scripts/release-audit.js",
     "scripts/release-audit-certificate.js",
     "scripts/release-audit-evidence.js",
+    "scripts/release-benchmark-artifact-validation.js",
+    "scripts/release-benchmark-certification.js",
     "scripts/release-certificate-receipt.js",
     "scripts/release-change-fragments.js",
     "scripts/release-changelog-audit.js",

@@ -4,15 +4,18 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { hashRuntimeSnapshot } from "../../src/harness/runtime-snapshot.ts";
 import { commandForKiloModelResolution } from "../../src/workloads/agent-command.ts";
 import {
-  bindCertifiedHarness,
+  bindCertifiedHarnessCore,
+  bindCertifiedModelConfiguration,
   counterbalanceAgentOrder,
   planRunCells,
-  recheckCertifiedHarness,
+  recheckCertifiedHarnessCore,
 } from "../../src/workloads/certification.ts";
 import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
 import { benchmarkTasks } from "../../src/workloads/task-registry.ts";
+import { writeCertifiedModelConfigurationFixture } from "./certification-model-config-fixture.ts";
 
 test("option gating requires exactly p, pi, kilo, 4 tasks, >=3 runs, compiled instructions, and model evidence", () => {
   const valid = parseRunnerArgs([
@@ -132,13 +135,14 @@ test("executable and harness bindings fail closed on missing executables or plac
     const pSnapshot = join(root, "p-snapshot");
     mkdirSync(pSnapshot);
     writeFileSync(join(pSnapshot, "package.json"), JSON.stringify({ version: "0.1.0" }));
+    const pSnapshotSha256 = hashRuntimeSnapshot(pSnapshot, process.execPath);
 
     assert.throws(
       () =>
-        bindCertifiedHarness({
+        bindCertifiedHarnessCore({
           nodeExecutable: join(root, "nonexistent-node"),
           pSnapshotPath: pSnapshot,
-          pSnapshotSha256: "a".repeat(64),
+          pSnapshotSha256,
           pVersion: "0.1.0",
           piExecutable: join(root, "faux-pi"),
           kiloExecutable: join(root, "faux-kilo"),
@@ -149,7 +153,7 @@ test("executable and harness bindings fail closed on missing executables or plac
 
     assert.throws(
       () =>
-        bindCertifiedHarness({
+        bindCertifiedHarnessCore({
           nodeExecutable: process.execPath,
           pSnapshotPath: pSnapshot,
           pSnapshotSha256: "0".repeat(64),
@@ -160,13 +164,12 @@ test("executable and harness bindings fail closed on missing executables or plac
         }),
       /Candidate P snapshot identity must not be zero or placeholder/u,
     );
-
     assert.throws(
       () =>
-        bindCertifiedHarness({
+        bindCertifiedHarnessCore({
           nodeExecutable: process.execPath,
           pSnapshotPath: pSnapshot,
-          pSnapshotSha256: "a".repeat(64),
+          pSnapshotSha256,
           pVersion: "0.1.0",
           piExecutable: join(root, "nonexistent-pi"),
           kiloExecutable: join(root, "faux-kilo"),
@@ -181,13 +184,12 @@ test("executable and harness bindings fail closed on missing executables or plac
     const fauxKilo = join(root, "faux-kilo");
     writeFileSync(fauxKilo, "#!/bin/sh\necho '2.0.0'\n");
     chmodSync(fauxKilo, 0o755);
-
     assert.throws(
       () =>
-        bindCertifiedHarness({
+        bindCertifiedHarnessCore({
           nodeExecutable: process.execPath,
           pSnapshotPath: pSnapshot,
-          pSnapshotSha256: "a".repeat(64),
+          pSnapshotSha256,
           pVersion: "0.1.0",
           piExecutable: fauxPi,
           piVersion: "0.82.1",
@@ -200,10 +202,10 @@ test("executable and harness bindings fail closed on missing executables or plac
 
     assert.throws(
       () =>
-        bindCertifiedHarness({
+        bindCertifiedHarnessCore({
           nodeExecutable: process.execPath,
           pSnapshotPath: pSnapshot,
-          pSnapshotSha256: "a".repeat(64),
+          pSnapshotSha256,
           pVersion: "0.1.0",
           piExecutable: fauxPi,
           piVersion: "1.0.0",
@@ -257,8 +259,15 @@ test("instruction and executable recheck verifies exact artifacts and detects ta
       .update("node\0")
       .update(readFileSync(process.execPath))
       .digest("hex");
+    const modelInputs = writeCertifiedModelConfigurationFixture(root);
+    const modelConfiguration = bindCertifiedModelConfiguration({
+      ...modelInputs,
+      model: "backend/model",
+      kiloModel: "backend/model",
+      expectedResolvedModel: "backend/model",
+    });
 
-    const binding = bindCertifiedHarness({
+    const binding = bindCertifiedHarnessCore({
       nodeExecutable: process.execPath,
       pSnapshotPath: pSnapshot,
       pSnapshotSha256: snapshotSha,
@@ -267,21 +276,22 @@ test("instruction and executable recheck verifies exact artifacts and detects ta
       piVersion: "0.82.1",
       kiloExecutable: fauxKilo,
       kiloVersion: "7.4.17",
+      modelConfiguration,
       projectInstructionsFile: agentsFile,
     });
 
-    assert.doesNotThrow(() => recheckCertifiedHarness(binding, pSnapshot, snapshotSha));
+    assert.doesNotThrow(() => recheckCertifiedHarnessCore(binding, pSnapshot, snapshotSha));
 
     const foreignSnapshot = join(root, "foreign-p-snapshot");
     mkdirSync(foreignSnapshot);
     assert.throws(
-      () => recheckCertifiedHarness(binding, foreignSnapshot, snapshotSha),
+      () => recheckCertifiedHarnessCore(binding, foreignSnapshot, snapshotSha),
       /P snapshot identity does not match executed P runtime path/u,
     );
 
     writeFileSync(agentsFile, "# Tampered Instructions\n");
     assert.throws(
-      () => recheckCertifiedHarness(binding, pSnapshot, snapshotSha),
+      () => recheckCertifiedHarnessCore(binding, pSnapshot, snapshotSha),
       /Project instructions content changed before certification publishing/u,
     );
   } finally {

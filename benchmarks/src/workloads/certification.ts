@@ -4,27 +4,45 @@ import { assertCertifiedOutputWritePath } from "../harness/certified-output-inte
 import type { BenchmarkEvaluationFreeze } from "../harness/evaluation-freeze.ts";
 import {
   type CertifiedHarnessBinding,
-  formatCertificationReport,
+  type CertifiedHarnessCoreBinding,
   recheckCertifiedHarness,
 } from "./certification-binding.ts";
+import {
+  evaluatePairedEfficiency,
+  evaluateStrictQualityDominance,
+  extractCertifiedMonetaryCost,
+} from "./certification-paired-efficiency.ts";
 import { evaluateInstructionParityReceipts } from "./certification-preflight.ts";
+import { formatCertificationReport } from "./certification-report.ts";
 import { validateCertifiedBenchmarkRow } from "./certification-row-schema.ts";
+import { certifiedTaskMaxScoreFor } from "./certified-task-score-policy.ts";
 import type { RunnerOptions } from "./runner-options.ts";
 import { benchmarkTasks } from "./task-registry.ts";
 
 export type {
   CertifiedExecutableBinding,
   CertifiedHarnessBinding,
+  CertifiedHarnessCoreBinding,
+  CertifiedHarnessCoreInputs,
   CertifiedHarnessInputs,
 } from "./certification-binding.ts";
 export {
   bindCertifiedHarness,
+  bindCertifiedHarnessCore,
   counterbalanceAgentOrder,
-  formatCertificationReport,
   hashFile,
   planRunCells,
   recheckCertifiedHarness,
+  recheckCertifiedHarnessCore,
 } from "./certification-binding.ts";
+export {
+  bindCertifiedModelConfiguration,
+  type CertifiedModelConfiguration,
+  type CertifiedModelConfigurationInputs,
+  type CertifiedModelConfigurationSnapshot,
+  recheckCertifiedModelConfiguration,
+  snapshotCertifiedModelConfiguration,
+} from "./certification-model-config.ts";
 export {
   type CertifiedInstructionReceipt,
   createAugmentedProjectInstructions,
@@ -32,6 +50,7 @@ export {
   runCertifiedPreflights,
   verifyWorkspaceInstructions,
 } from "./certification-preflight.ts";
+export { formatCertificationReport } from "./certification-report.ts";
 export { setupCertifiedBenchmark } from "./certification-setup.ts";
 
 export interface CertifiedThresholds {
@@ -43,7 +62,7 @@ export interface CertifiedThresholds {
 export interface CertificationOutcome {
   passed: boolean;
   failures: string[];
-  binding?: CertifiedHarnessBinding;
+  binding?: CertifiedHarnessCoreBinding;
   thresholds?: CertifiedThresholds;
 }
 
@@ -75,27 +94,19 @@ export interface BenchmarkRowLike {
   quality?: { passed: boolean; score: number; maxScore: number; penalty?: number; rawScore?: number };
 }
 
-function extractMonetaryCost(usage: { cost?: unknown } | undefined): number | undefined {
-  if (!usage || usage.cost === undefined || usage.cost === null) return undefined;
-  if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0) return usage.cost;
-  const total = typeof usage.cost === "object" ? (usage.cost as Record<string, unknown>).total : undefined;
-  return typeof total === "number" && Number.isFinite(total) && total >= 0 ? total : undefined;
-}
-
 export function evaluateCertification(
   results: readonly BenchmarkRowLike[],
   options: RunnerOptions,
-  binding?: CertifiedHarnessBinding,
+  binding?: CertifiedHarnessCoreBinding,
 ): CertificationOutcome {
   const failures: string[] = [];
   const expectedModel = options.expectedResolvedModel;
   const canonicalAgents = ["p", "pi", "kilo"] as const;
   const canonicalTaskIds = benchmarkTasks.map((task) => task.id);
-  const taskMaxScores = new Map(benchmarkTasks.map((task) => [task.id, task.maxScore]));
   const requiredRuns = options.runs;
 
   results.forEach((row, index) => {
-    failures.push(...validateCertifiedBenchmarkRow(row, index, taskMaxScores.get(row.task)));
+    failures.push(...validateCertifiedBenchmarkRow(row, index, certifiedTaskMaxScoreFor(row.task)));
   });
 
   if (requiredRuns < 3) {
@@ -174,7 +185,7 @@ export function evaluateCertification(
       failures.push(`missing duration runtime evidence for ${label}`);
     }
 
-    const cost = extractMonetaryCost(row.metrics?.usage);
+    const cost = extractCertifiedMonetaryCost(row.metrics?.usage);
     if (options.maxCostRatio !== undefined && cost === undefined) {
       failures.push(`missing monetary cost runtime evidence for ${label}`);
     }
@@ -198,56 +209,12 @@ export function evaluateCertification(
     }
   }
 
-  const pRows = results.filter((row) => row.agent === "p");
-  const piRows = results.filter((row) => row.agent === "pi");
-  const kiloRows = results.filter((row) => row.agent === "kilo");
-
-  const average = (rows: readonly BenchmarkRowLike[], selector: (r: BenchmarkRowLike) => number): number =>
-    rows.length === 0 ? 0 : rows.reduce((acc, r) => acc + selector(r), 0) / rows.length;
-
-  const pAvgDuration = average(pRows, (r) => r.elapsedMs ?? 0);
-  const piAvgDuration = average(piRows, (r) => r.elapsedMs ?? 0);
-  const kiloAvgDuration = average(kiloRows, (r) => r.elapsedMs ?? 0);
-
-  const pAvgTokens = average(pRows, (r) => r.metrics?.usage?.totalTokens ?? 0);
-  const piAvgTokens = average(piRows, (r) => r.metrics?.usage?.totalTokens ?? 0);
-  const kiloAvgTokens = average(kiloRows, (r) => r.metrics?.usage?.totalTokens ?? 0);
-
-  const pAvgCost = average(pRows, (r) => extractMonetaryCost(r.metrics?.usage) ?? 0);
-  const piAvgCost = average(piRows, (r) => extractMonetaryCost(r.metrics?.usage) ?? 0);
-  const kiloAvgCost = average(kiloRows, (r) => extractMonetaryCost(r.metrics?.usage) ?? 0);
-
   const maxDurationRatio = options.maxDurationRatio ?? 1.0;
   const maxTokenRatio = options.maxTokenRatio ?? 1.0;
   const maxCostRatio = options.maxCostRatio;
-  for (const [name, val] of [
-    ["maxDurationRatio", maxDurationRatio],
-    ["maxTokenRatio", maxTokenRatio],
-    ...(maxCostRatio !== undefined ? [["maxCostRatio", maxCostRatio] as const] : []),
-  ] as const) {
-    if (!Number.isFinite(val) || val <= 0) failures.push(`Invalid ${name} threshold: ${val}`);
-  }
-
-  const checkThreshold = (agent: "pi" | "kilo", kind: string, pVal: number, baseVal: number, ratio: number) => {
-    if (!Number.isFinite(pVal) || !Number.isFinite(baseVal) || !Number.isFinite(ratio) || ratio <= 0) {
-      failures.push(`Invalid numeric values for ${kind} threshold versus ${agent}`);
-      return;
-    }
-    if (pVal > baseVal * ratio) {
-      failures.push(
-        `P exceeded ${kind} threshold versus ${agent} (${pVal.toFixed(0)} > ${baseVal.toFixed(0)} * ${ratio})`,
-      );
-    }
-  };
-
-  for (const [agent, dur, tok, cost] of [
-    ["pi", piAvgDuration, piAvgTokens, piAvgCost],
-    ["kilo", kiloAvgDuration, kiloAvgTokens, kiloAvgCost],
-  ] as const) {
-    checkThreshold(agent, "duration", pAvgDuration, dur, maxDurationRatio);
-    checkThreshold(agent, "token", pAvgTokens, tok, maxTokenRatio);
-    if (maxCostRatio !== undefined) checkThreshold(agent, "cost", pAvgCost, cost, maxCostRatio);
-  }
+  const thresholds = { maxDurationRatio, maxTokenRatio, ...(maxCostRatio !== undefined ? { maxCostRatio } : {}) };
+  failures.push(...evaluateStrictQualityDominance(results, canonicalTaskIds, requiredRuns));
+  failures.push(...evaluatePairedEfficiency(results, canonicalTaskIds, requiredRuns, thresholds));
 
   if (binding) {
     failures.push(...evaluateInstructionParityReceipts(binding, canonicalAgents, expectedModel));
@@ -257,7 +224,7 @@ export function evaluateCertification(
     passed: failures.length === 0,
     failures,
     binding,
-    thresholds: { maxDurationRatio, maxTokenRatio, ...(maxCostRatio !== undefined ? { maxCostRatio } : {}) },
+    thresholds,
   };
 }
 

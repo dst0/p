@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import type { RunnerOptions } from "./runner-options.ts";
+import { requireCleanReleaseBenchmarkBase } from "./release-benchmark-base.ts";
+import { type RunnerOptions, repoRoot } from "./runner-options.ts";
 
 export function validateBenchmarkRuntimeInputs(options: RunnerOptions): void {
+  if (options.releaseTarget) requireCleanReleaseBenchmarkBase(repoRoot);
   if (options.certified && (options.certifiedNetworkHosts ?? []).length === 0) {
     throw new Error("At least one certified network host is required via --certified-network-host");
   }

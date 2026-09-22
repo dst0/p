@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Certify the internal major-release benchmark harness, model parity, sealed evaluator holdouts, and exact-main release evidence without changing shipped runtime behavior."
+}

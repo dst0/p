@@ -13,14 +13,11 @@ import {
 } from "../project-instructions/turn-authority.ts";
 import { type AgentCommand, commandForAgent, sandboxedCommandIfNeeded } from "./agent-command.ts";
 import { createAgentTaskCompletionGuard } from "./agent-task-completion.ts";
+import { agentTurnNudgePrompts } from "./agent-turn-prompts.ts";
+import { certifiedCellHardDeadline, remainingCertifiedCellTimeoutMs } from "./certification-runtime-budget.ts";
 import { createPRecordingMetricsAccumulator, type RecordingMetrics } from "./recording-metrics.ts";
 import type { AgentId, RunnerOptions } from "./runner-options.ts";
 import type { BenchmarkTask } from "./task-definition.ts";
-
-const nudgeMessage =
-  "Are you done with the task or is there anything left? If you are finished, ensure all requirements are satisfied and create finish_notes.md.";
-const terminalRecoveryNudgeMessage =
-  "finish_notes.md exists, but P has not completed its terminal verification. Complete fresh verification and its terminal action.";
 
 export const nudgePenaltyPerNudge = 15;
 
@@ -157,7 +154,9 @@ export async function runAgentTask(
   let lastTimeoutKind: BenchmarkTimeoutKind | undefined;
   let nudges = 0;
   const maxNudges = 5;
-  const taskTimeoutMs = taskTimeoutSeconds * 1000;
+  const cellHardDeadline = options.certified
+    ? certifiedCellHardDeadline(startedAt, taskTimeoutSeconds)
+    : startedAt + taskTimeoutSeconds * 1000;
   const recording = benchmarkRunnerRecordingFactory.task(recordingPath, options);
   const completion = createAgentTaskCompletionGuard(agent, options.taskVerificationMode);
   const metricsAccumulator = agent === "p" ? createPRecordingMetricsAccumulator() : undefined;
@@ -166,12 +165,14 @@ export async function runAgentTask(
     let currentPrompt = task.prompt;
     while (true) {
       throwIfBenchmarkInterrupted(options.signal);
-      const remainingTaskMs = taskTimeoutMs - (performance.now() - startedAt);
+      const remainingTaskMs = cellHardDeadline - performance.now();
       const remainingOverallMs = overallDeadline - performance.now();
-      const turnTimeoutMs = Math.min(remainingTaskMs, remainingOverallMs);
+      const turnTimeoutMs = options.certified
+        ? remainingCertifiedCellTimeoutMs(cellHardDeadline, overallDeadline, performance.now())
+        : Math.min(remainingTaskMs, remainingOverallMs);
       if (turnTimeoutMs <= 0) {
         timedOut = true;
-        lastTimeoutKind = remainingOverallMs <= 0 ? "hard_deadline" : "inactivity";
+        lastTimeoutKind = options.certified || remainingOverallMs <= 0 ? "hard_deadline" : "inactivity";
         break;
       }
       const turnOrdinal = nudges + 1;
@@ -190,7 +191,9 @@ export async function runAgentTask(
       const turnResult = (await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
         ...turnOptions,
         allowCanonicalPAgentEnd: allowsCanonicalPAgentEnd(agent),
-        hardTimeoutMs: remainingOverallMs,
+        hardTimeoutMs: options.certified
+          ? remainingCertifiedCellTimeoutMs(cellHardDeadline, overallDeadline, performance.now())
+          : remainingOverallMs,
         maxMetricEvents: combined.remainingMetricEvents,
         progressEventTypes: semanticProgressEventTypes,
         signal: options.signal,
@@ -241,11 +244,11 @@ export async function runAgentTask(
       }
       const finishNotesCreated = existsSync(join(workspace, "finish_notes.md"));
       if (completion.shouldStop(didAgentTurnFail(turnResult), finishNotesCreated)) break;
-      const remainingAfterTurn = taskTimeoutMs - (performance.now() - startedAt);
+      const remainingAfterTurn = cellHardDeadline - performance.now();
       const overallRemainingAfterTurn = overallDeadline - performance.now();
       if (remainingAfterTurn <= 0) {
         lastCode = undefined;
-        lastError = "agent completed an active turn after the nominal task budget without accepted terminal completion";
+        lastError = `agent completed an active turn after the ${options.certified ? "certified cell hard" : "nominal task"} budget without accepted terminal completion`;
         break;
       }
       const remainingUsableMs = Math.min(remainingAfterTurn, overallRemainingAfterTurn);
@@ -265,7 +268,9 @@ export async function runAgentTask(
         `[watchdog] ${agent}/${task.id}: ${reason}; sending nudge #${nudges} (${Math.round(remainingUsableMs / 1000)}s remaining)`,
       );
       isContinue = true;
-      currentPrompt = waitingForAcceptedCompletion ? terminalRecoveryNudgeMessage : nudgeMessage;
+      currentPrompt = waitingForAcceptedCompletion
+        ? agentTurnNudgePrompts.terminalRecovery
+        : agentTurnNudgePrompts.nudge;
     }
     await recording.finalize();
   } catch (error) {

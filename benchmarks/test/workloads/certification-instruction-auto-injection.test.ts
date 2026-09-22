@@ -69,11 +69,13 @@ if (kilo) {
       "--kilo-executable",
       cli,
     ]);
+    options.candidateRuntimePath = root;
     const binding = {
       node: { path: process.execPath, version: process.version, sha256: "a".repeat(64) },
       pSnapshot: { path: root, version: "1", sha256: "b".repeat(64) },
       pi: { path: cli, version: "1", sha256: "c".repeat(64) },
       kilo: { path: cli, version: "1", sha256: "d".repeat(64) },
+      modelConfiguration: { sha256: "e".repeat(64) },
       projectInstructions: {
         path: augmented.augmentedPath,
         sha256: augmented.augmentedSha256,

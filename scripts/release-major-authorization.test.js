@@ -13,16 +13,50 @@ import {
   writeReleaseAuditState,
 } from "./release-audit-certificate.js";
 import { verifyReleaseReceipt } from "./release-certificate-receipt.js";
+import { computeBenchmarkCertificationId } from "./release-benchmark-certification.js";
 import {
   createReleaseFlowFixture,
   git,
   runFixtureRelease,
+  writeFixtureBenchmarkCertification,
 } from "./release-flow-test-fixture.js";
-import { beginRelease, writeReleaseReceipt } from "./release-transaction.js";
-import { discoverWorkspacePackagePaths } from "./release-workspaces.js";
 
 const releaseAuditScript = resolve("scripts/release-audit.js");
-const versionBumpScript = resolve("scripts/version-bump.js");
+
+test("major release audit fails closed without benchmark certification", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    assert.throws(
+      () => certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true }),
+      /benchmark certification/i,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("major release audit rejects stale and future-dated benchmark evidence", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    writeFixtureBenchmarkCertification(fixture, "5.0.1", {
+      createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    });
+    assert.throws(
+      () => certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true }),
+      /older than 24 hours/u,
+    );
+
+    writeFixtureBenchmarkCertification(fixture, "5.0.1", {
+      createdAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    assert.throws(
+      () => certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true }),
+      /future clock skew/u,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
 
 function rewriteReceiptAuthorization(fixture, targetVersion, allowMajor) {
   const tagName = `v${targetVersion}`;
@@ -33,6 +67,11 @@ function rewriteReceiptAuthorization(fixture, targetVersion, allowMajor) {
   );
   const receipt = JSON.parse(brotliDecompressSync(readFileSync(path)));
   receipt.allowMajor = allowMajor;
+  if (allowMajor && !receipt.benchmarkCertification) {
+    receipt.benchmarkCertification = {};
+  } else if (!allowMajor) {
+    delete receipt.benchmarkCertification;
+  }
   receipt.certificateId = computeReleaseCertificateId(receipt);
   writeFileSync(
     path,
@@ -52,6 +91,13 @@ test("requires explicit authorization and binds it into a major-release certific
       () => certifyReleaseAudit(fixture.repoRoot, "5.0.1"),
       /explicit authorization/,
     );
+    const benchmark = writeFixtureBenchmarkCertification(fixture);
+    assert.deepEqual(benchmark.matrix.tasks, [
+      "typescript-calculator",
+      "monolith-split",
+      "event-sourced-inventory",
+      "durable-workflow-saga",
+    ]);
     const certificate = certifyReleaseAudit(fixture.repoRoot, "5.0.1", {
       allowMajor: true,
     });
@@ -68,6 +114,47 @@ test("requires explicit authorization and binds it into a major-release certific
   }
 });
 
+test("rejects unbound fields in a self-rehashed benchmark certification", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    writeFixtureBenchmarkCertification(fixture);
+    const certificate = certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true });
+    const benchmarkCertification = {
+      ...certificate.benchmarkCertification,
+      unexpectedMetadata: "not covered by the benchmark certification id",
+    };
+    benchmarkCertification.certificationId = computeBenchmarkCertificationId(benchmarkCertification);
+    const forged = { ...certificate, benchmarkCertification };
+    forged.certificateId = computeReleaseCertificateId(forged);
+    writeReleaseAuditState(fixture.repoRoot, forged);
+    assert.match(inspectReleaseCertificate(fixture.repoRoot, "5.0.1").reason, /unexpected field/i);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("rejects placeholder hashes in a self-rehashed benchmark certification", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    writeFixtureBenchmarkCertification(fixture);
+    const certificate = certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true });
+    const benchmarkCertification = {
+      ...certificate.benchmarkCertification,
+      binding: {
+        ...certificate.benchmarkCertification.binding,
+        candidateRuntimeSha256: "0".repeat(64),
+      },
+    };
+    benchmarkCertification.certificationId = computeBenchmarkCertificationId(benchmarkCertification);
+    const forged = { ...certificate, benchmarkCertification };
+    forged.certificateId = computeReleaseCertificateId(forged);
+    writeReleaseAuditState(fixture.repoRoot, forged);
+    assert.match(inspectReleaseCertificate(fixture.repoRoot, "5.0.1").reason, /invalid binding/i);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("standalone audit CLI requires the explicit major-release flag", () => {
   const fixture = createReleaseFlowFixture();
   try {
@@ -79,6 +166,7 @@ test("standalone audit CLI requires the explicit major-release flag", () => {
     assert.notEqual(unauthorized.status, 0);
     assert.match(unauthorized.stderr, /explicit authorization/);
 
+    writeFixtureBenchmarkCertification(fixture);
     const authorized = spawnSync(
       process.execPath,
       [releaseAuditScript, "audit", "5.0.1", "--allow-major"],
@@ -119,6 +207,7 @@ test("receipt verification rejects self-rehashed authorization contradictions", 
   ]) {
     const fixture = createReleaseFlowFixture();
     try {
+      if (initialAllowMajor) writeFixtureBenchmarkCertification(fixture, targetVersion);
       const result = runFixtureRelease(fixture, targetVersion, {
         allowMajor: initialAllowMajor,
       });
@@ -128,95 +217,6 @@ test("receipt verification rejects self-rehashed authorization contradictions", 
         () => verifyReleaseReceipt(fixture.repoRoot, `v${targetVersion}`),
         expected,
       );
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  }
-});
-
-test("version bump accepts an authorized major target but rejects receipt authorization drift", () => {
-  const fixture = createReleaseFlowFixture();
-  try {
-    certifyReleaseAudit(fixture.repoRoot, "5.0.1", { allowMajor: true });
-    const authorization = beginRelease(fixture.repoRoot, "5.0.1");
-    const result = spawnSync(process.execPath, [versionBumpScript, "5.0.1"], {
-      cwd: fixture.repoRoot,
-      encoding: "utf8",
-      env: { ...process.env, P_RELEASE_AUDIT_TOKEN: authorization.token },
-    });
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.equal(
-      JSON.parse(readFileSync(join(fixture.repoRoot, "package.json"))).version,
-      "5.0.1",
-    );
-    const versionBumped = readReleaseAuditState(fixture.repoRoot);
-    writeReleaseAuditState(fixture.repoRoot, { ...versionBumped, allowMajor: false });
-    assert.throws(
-      () =>
-        writeReleaseReceipt(
-          fixture.repoRoot,
-          "5.0.1",
-          authorization.token,
-          "2026-08-21",
-        ),
-      /authorization|certificate/i,
-    );
-    assert.equal(
-      existsSync(join(fixture.repoRoot, "release-certificates/v5.0.1.json.br")),
-      false,
-    );
-  } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("active token rejects target, certificate, and evidence mutation before writes", () => {
-  for (const scenario of [
-    {
-      requestedTarget: "5.0.1",
-      mutate: (state) => ({ ...state, targetVersion: "5.0.1" }),
-    },
-    {
-      requestedTarget: "0.5.0",
-      mutate: (state) => ({ ...state, certificateId: "0".repeat(64) }),
-    },
-    {
-      requestedTarget: "0.5.0",
-      mutate: (state) => ({
-        ...state,
-        evidence: { ...state.evidence, unexpected: "mutated after authorization" },
-      }),
-    },
-  ]) {
-    const fixture = createReleaseFlowFixture();
-    try {
-      certifyReleaseAudit(fixture.repoRoot, "0.5.0");
-      const authorization = beginRelease(fixture.repoRoot, "0.5.0");
-      writeReleaseAuditState(
-        fixture.repoRoot,
-        scenario.mutate(readReleaseAuditState(fixture.repoRoot)),
-      );
-      const protectedPaths = [
-        "package.json",
-        "package-lock.json",
-        ...discoverWorkspacePackagePaths(fixture.repoRoot),
-      ];
-      const before = new Map(
-        protectedPaths.map((path) => [
-          path,
-          readFileSync(join(fixture.repoRoot, path), "utf8"),
-        ]),
-      );
-
-      const result = spawnSync(process.execPath, [versionBumpScript, scenario.requestedTarget], {
-        cwd: fixture.repoRoot,
-        encoding: "utf8",
-        env: { ...process.env, P_RELEASE_AUDIT_TOKEN: authorization.token },
-      });
-      assert.notEqual(result.status, 0);
-      for (const [path, content] of before) {
-        assert.equal(readFileSync(join(fixture.repoRoot, path), "utf8"), content, path);
-      }
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

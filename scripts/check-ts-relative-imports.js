@@ -28,6 +28,13 @@ function isApprovedBenchmarkBuildSpecifier(file, specifier) {
 	return file.startsWith("benchmarks/") && /^(?:\.\.\/)+packages\/[^/]+\/dist\/.+\.js(?:[?#].*)?$/.test(specifier);
 }
 
+function isApprovedReleaseBridgeSpecifier(file, specifier) {
+	return (
+		file === "benchmarks/src/workloads/release-benchmark-publication.ts" &&
+		specifier === "../../../scripts/release-benchmark-certification.js"
+	);
+}
+
 function getImportTypeSpecifier(node) {
 	if (!ts.isLiteralTypeNode(node.argument)) return undefined;
 	if (!ts.isStringLiteralLike(node.argument.literal)) return undefined;
@@ -46,7 +53,7 @@ for (const file of files.sort()) {
 
 	function checkSpecifier(node) {
 		if (!isRelativeJavaScriptSpecifier(node.text)) return;
-		if (isApprovedBenchmarkBuildSpecifier(file, node.text)) return;
+		if (isApprovedBenchmarkBuildSpecifier(file, node.text) || isApprovedReleaseBridgeSpecifier(file, node.text)) return;
 		const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
 		failures.push(`${file}:${line + 1}:${character + 1}: ${node.text}`);
 	}

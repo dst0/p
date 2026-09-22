@@ -1,0 +1,22 @@
+# 2026-09-21 — Runtime snapshots must cover the import closure
+
+- **Status:** Resolved
+- **Task/context:** Adding durable release-certificate persistence to the certified benchmark runner.
+- **Unexpected observation or failure:** The benchmark runner imported a release persistence module outside `benchmarks/src`, but its immutable runtime snapshot rejected every non-package import outside that directory.
+- **Evidence:** The real snapshot regression failed while traversing the runner closure, and a focused fixture reproduced rejection of the release bridge.
+- **Approaches tried:**
+  - **Attempt:** Keep a TypeScript-to-JavaScript checker exception only.
+    - **Outcome:** Did not work
+    - **Why:** Static import syntax passed, but the runtime snapshot enforced a different and stricter closure boundary.
+  - **Attempt:** Duplicate release persistence inside the benchmark source tree.
+    - **Outcome:** Partial
+    - **Why:** It would avoid the escape but create two implementations of a security-sensitive receipt contract.
+  - **Attempt:** Admit and copy only the four exact release modules reached by the runner.
+    - **Outcome:** Worked
+    - **Why:** The frozen runtime remains self-contained and hash-bound while every other `scripts/` import still fails closed.
+- **Root cause:** The new dependency was reviewed against the TypeScript checker but not against the independent runtime-snapshot closure policy.
+- **Resolution:** Define an exact allowlist for the release benchmark modules, copy them at repository-relative paths, recursively inspect their imports, and reject unapproved script modules.
+- **Verification:** A focused snapshot fixture accepts the approved release bridge, confirms its copied path, and rejects an adjacent unapproved script.
+- **Prevention/follow-up:** Run the real closure regression after built package output exists, and review every new runner dependency against both static import and immutable snapshot policies.
+- **Reusable learning:** Any executable freeze must snapshot the complete transitive import closure; satisfying a language-level import check does not prove the frozen runtime is self-contained.
+- **References:** `benchmarks/src/harness/runtime-snapshot.ts`, `benchmarks/test/harness/runtime-snapshot.test.ts`

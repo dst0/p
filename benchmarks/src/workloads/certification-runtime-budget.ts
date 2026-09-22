@@ -3,7 +3,19 @@ import { canonicalTaskTimeoutSeconds } from "./task-definition.ts";
 
 const certifiedPreflightSecondsPerAgent = 60;
 const certifiedSetupSeconds = 300;
-const certifiedOrchestrationSecondsPerCell = 30;
+export const certifiedSemanticProgressExtensionSeconds = 30;
+
+export function certifiedCellHardDeadline(startedAt: number, nominalTaskSeconds: number): number {
+  return startedAt + (nominalTaskSeconds + certifiedSemanticProgressExtensionSeconds) * 1000;
+}
+
+export function remainingCertifiedCellTimeoutMs(
+  cellHardDeadline: number,
+  overallDeadline: number,
+  now: number,
+): number {
+  return Math.min(cellHardDeadline, overallDeadline) - now;
+}
 
 export function certifiedMinimumRuntimeSeconds(
   options: Pick<RunnerOptions, "agents" | "kiloStartupTimeoutSeconds" | "minimumTimeoutSeconds" | "runs">,
@@ -21,6 +33,6 @@ export function certifiedMinimumRuntimeSeconds(
     preflightSeconds +
     startupSeconds +
     certifiedSetupSeconds +
-    certifiedOrchestrationSecondsPerCell * cellCount
+    certifiedSemanticProgressExtensionSeconds * cellCount
   );
 }

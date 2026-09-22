@@ -31,6 +31,7 @@ function bindingWithReceipts(receipts: unknown[]) {
     pSnapshot: { path: "/runtime", version: "1", sha256: hash("b") },
     pi: { path: "/pi", version: "1", sha256: hash("c") },
     kilo: { path: "/kilo", version: "1", sha256: hash("d") },
+    modelConfiguration: { sha256: hash("f") },
     projectInstructions: { path: "/AGENTS.md", sha256: hash("e") },
     receipts,
   };
@@ -173,11 +174,13 @@ if (args.includes("run")) {
       "--project-instructions-file",
       augmented.augmentedPath,
     ]);
+    opts.candidateRuntimePath = root;
     const mockBinding = {
       node: { path: process.execPath, version: process.version, sha256: "a".repeat(64) },
       pSnapshot: { path: root, version: "0.4.0", sha256: "b".repeat(64) },
       pi: { path: mockCli, version: "1.0.0", sha256: "c".repeat(64) },
       kilo: { path: mockCli, version: "1.0.0", sha256: "d".repeat(64) },
+      modelConfiguration: { sha256: "e".repeat(64) },
       projectInstructions: {
         path: augmented.augmentedPath,
         sha256: augmented.augmentedSha256,
@@ -267,6 +270,7 @@ process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "ass
         pSnapshot: { path: runtime, version: "0.4.0", sha256: "b".repeat(64) },
         pi: { path: mockCli, version: "1.0.0", sha256: "c".repeat(64) },
         kilo: { path: mockCli, version: "1.0.0", sha256: "d".repeat(64) },
+        modelConfiguration: { sha256: "e".repeat(64) },
         projectInstructions: {
           path: augmented.augmentedPath,
           sha256: augmented.augmentedSha256,

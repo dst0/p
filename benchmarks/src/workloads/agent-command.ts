@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { augmentBenchmarkPath } from "../agents/environment.ts";
 import { createSandboxedBenchmarkCommand } from "../harness/benchmark-isolation.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
@@ -22,8 +22,37 @@ function required(value: string | undefined, option: string): string {
   return value;
 }
 
-function kiloEnvironment(configDir: string): NodeJS.ProcessEnv {
-  return {
+function frozenCandidateRuntime(options: RunnerOptions): string {
+  if (!options.candidateRuntimePath || !existsSync(options.candidateRuntimePath)) {
+    throw new Error("Certified execution requires a frozen candidate runtime");
+  }
+  return realpathSync(options.candidateRuntimePath);
+}
+
+function isWithin(root: string, path: string): boolean {
+  const relation = relative(root, path);
+  return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
+}
+
+function certifiedToolchainPath(options: RunnerOptions): string {
+  const sourceRoot = frozenCandidateRuntime(options);
+  const liveRoot = realpathSync(repoRoot);
+  return augmentBenchmarkPath(sourceRoot)
+    .split(delimiter)
+    .filter((directory) => {
+      if (!directory) return false;
+      const path = existsSync(directory) ? realpathSync(directory) : resolve(directory);
+      return !isWithin(liveRoot, path);
+    })
+    .join(delimiter);
+}
+
+function commandEnvironment(options: RunnerOptions, environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return options.certified ? { ...environment, PATH: certifiedToolchainPath(options) } : environment;
+}
+
+function kiloEnvironment(configDir: string, options: RunnerOptions): NodeJS.ProcessEnv {
+  return commandEnvironment(options, {
     ...sanitizeBenchmarkGitEnvironment(),
     HOME: configDir,
     NO_COLOR: "1",
@@ -31,7 +60,7 @@ function kiloEnvironment(configDir: string): NodeJS.ProcessEnv {
     XDG_CONFIG_HOME: join(configDir, "config"),
     XDG_DATA_HOME: join(configDir, "data"),
     XDG_STATE_HOME: join(configDir, "state"),
-  };
+  });
 }
 
 export function commandForAgent(
@@ -60,7 +89,7 @@ export function commandForAgent(
     return {
       executable: "agy",
       args,
-      env: { ...sanitizeBenchmarkGitEnvironment(), NO_COLOR: "1" },
+      env: commandEnvironment(options, { ...sanitizeBenchmarkGitEnvironment(), NO_COLOR: "1" }),
       cwd: workspace,
     };
   }
@@ -70,7 +99,12 @@ export function commandForAgent(
     args.push("--dir", workspace);
     if (isContinue) args.push("--continue");
     args.push(prompt);
-    return { executable: options.kiloExecutable ?? "kilo", args, env: kiloEnvironment(configDir), cwd: workspace };
+    return {
+      executable: options.kiloExecutable ?? "kilo",
+      args,
+      env: kiloEnvironment(configDir, options),
+      cwd: workspace,
+    };
   }
   if (agent === "codex") {
     return {
@@ -89,7 +123,7 @@ export function commandForAgent(
         workspace,
         prompt,
       ],
-      env: { ...sanitizeBenchmarkGitEnvironment(), NO_COLOR: "1", CODEX_HOME: configDir },
+      env: commandEnvironment(options, { ...sanitizeBenchmarkGitEnvironment(), NO_COLOR: "1", CODEX_HOME: configDir }),
       cwd: workspace,
     };
   }
@@ -130,7 +164,7 @@ export function commandForAgent(
   const caPath = join(homedir(), ".p", "agent", "ca.pem");
   if (existsSync(caPath)) env.NODE_EXTRA_CA_CERTS = caPath;
   env.NO_COLOR = "1";
-  env.PATH = augmentBenchmarkPath(repoRoot);
+  env.PATH = options.certified ? certifiedToolchainPath(options) : augmentBenchmarkPath(repoRoot);
   if (agent === "p") {
     return { executable: process.execPath, args: [options.pCli, ...commonArgs], env, cwd: workspace };
   }
@@ -163,7 +197,7 @@ export function commandForKiloModelResolution(
   return {
     executable: options.kiloExecutable ?? "kilo",
     args: ["models", provider, "--verbose", "--pure"],
-    env: kiloEnvironment(configDir),
+    env: kiloEnvironment(configDir, options),
     cwd: workspace,
   };
 }
@@ -174,11 +208,12 @@ export function sandboxedCommandIfNeeded(
   workspace: string,
   configDir: string,
 ): AgentCommand {
-  if (!options.certified || !options.candidateRuntimePath) return command;
+  if (!options.certified) return command;
+  const runtime = frozenCandidateRuntime(options);
   const sandboxed = createSandboxedBenchmarkCommand(
     {
       workspace,
-      runtime: options.candidateRuntimePath,
+      runtime,
       configDir,
       extraReadPaths: [
         command.executable,

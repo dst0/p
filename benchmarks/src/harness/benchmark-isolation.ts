@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 export interface BenchmarkIsolationPaths {
   workspace: string;
   runtime: string;
+  workspaceWritable?: boolean;
+  processFork?: boolean;
   configDir?: string;
   extraReadPaths?: readonly string[];
   networkHosts?: readonly string[];
@@ -63,7 +65,7 @@ export function createBenchmarkSandboxProfile(
     "(deny default)",
     '(import "system.sb")',
     "(allow process-exec)",
-    "(allow process-fork)",
+    ...(paths.processFork === false ? [] : ["(allow process-fork)"]),
     "(allow signal (target self))",
     "(allow sysctl-read)",
     "(allow mach-lookup)",
@@ -76,7 +78,7 @@ export function createBenchmarkSandboxProfile(
     ...Array.from(extraLiterals).map((literal) => `(allow file-read* (literal ${quote(literal)}))`),
     `(allow file-read* (subpath ${quote(runtime)}))`,
     `(allow file-read* (subpath ${quote(workspace)}))`,
-    `(allow file-write* (subpath ${quote(workspace)}))`,
+    ...(paths.workspaceWritable === false ? [] : [`(allow file-write* (subpath ${quote(workspace)}))`]),
   ].join(" ");
 }
 

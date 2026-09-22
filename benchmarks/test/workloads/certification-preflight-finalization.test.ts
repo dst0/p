@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } from "node:zlib";
 import { bindCertifiedOutputRoot } from "../../src/harness/certified-output-integrity.ts";
 import { BenchmarkMutableArtifactsUnsafeError } from "../../src/workloads/benchmark-run-finalization.ts";
-import type { CertifiedHarnessBinding } from "../../src/workloads/certification-binding.ts";
+import type { CertifiedHarnessCoreBinding } from "../../src/workloads/certification-binding.ts";
 import { hashFile, runCertifiedPreflights } from "../../src/workloads/certification-preflight.ts";
 import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
 
@@ -20,11 +20,12 @@ test("unconfirmed preflight termination still redacts its parent-owned recording
     writeFileSync(instructions, "project instructions\n");
     bindCertifiedOutputRoot(output);
     const executable = { path: process.execPath, version: process.version, sha256: "a".repeat(64) };
-    const binding: CertifiedHarnessBinding = {
+    const binding: CertifiedHarnessCoreBinding = {
       node: executable,
       pSnapshot: executable,
       pi: executable,
       kilo: executable,
+      modelConfiguration: { sha256: "b".repeat(64) },
       projectInstructions: { path: instructions, sha256: hashFile(instructions) },
     };
     const options = parseRunnerArgs(["--model", "expected/model", "--kilo-model", "expected/model"]);

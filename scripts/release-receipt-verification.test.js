@@ -16,6 +16,7 @@ import {
   git,
   gitBuffer,
   runFixtureRelease,
+  writeFixtureBenchmarkCertification,
 } from "./release-flow-test-fixture.js";
 import { hashReleaseInputEntries } from "./release-inputs.js";
 import { isAllowedReleaseMutationPath } from "./release-path-policy.js";
@@ -27,6 +28,15 @@ function releaseFixture() {
   const result = runFixtureRelease(fixture);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   git(fixture.repoRoot, "checkout", "--detach", "v0.5.0");
+  return fixture;
+}
+
+function majorReleaseFixture() {
+  const fixture = createReleaseFlowFixture();
+  writeFixtureBenchmarkCertification(fixture);
+  const result = runFixtureRelease(fixture, "5.0.1", { allowMajor: true });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  git(fixture.repoRoot, "checkout", "--detach", "v5.0.1");
   return fixture;
 }
 
@@ -52,6 +62,12 @@ function amendReleaseTag(fixture, paths) {
   git(fixture.repoRoot, "commit", "--amend", "--no-edit");
   git(fixture.repoRoot, "tag", "-f", "v0.5.0", "HEAD");
   git(fixture.repoRoot, "push", "--force", "origin", "HEAD:refs/heads/main");
+}
+
+function amendMajorReleaseTag(fixture, paths) {
+  git(fixture.repoRoot, "add", "--", ...paths);
+  git(fixture.repoRoot, "commit", "--amend", "--no-edit");
+  git(fixture.repoRoot, "tag", "-f", "v5.0.1", "HEAD");
 }
 
 function amendJson(fixture, path, mutate) {
@@ -99,6 +115,23 @@ test("rejects self-consistent evidence that was not produced from the certified 
     assert.throws(
       () => verifyReleaseReceipt(fixture.repoRoot, "v0.5.0"),
       /evidence does not match a deterministic audit/,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("rejects release receipt fields outside the bound schema", () => {
+  const fixture = releaseFixture();
+  try {
+    const receipt = readReceipt(fixture);
+    receipt.unboundClaim = "accepted-without-certificate-binding";
+    writeReceipt(fixture, receipt);
+    amendReleaseTag(fixture, ["release-certificates/v0.5.0.json.br"]);
+
+    assert.throws(
+      () => verifyReleaseReceipt(fixture.repoRoot, "v0.5.0"),
+      /Unexpected release receipt field set/u,
     );
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
@@ -213,6 +246,28 @@ test("rejects an annotated tag even when it peels to the certified release commi
     assert.throws(
       () => verifyReleaseReceipt(fixture.repoRoot, "v0.5.0"),
       /must be lightweight and point directly to a commit/,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("rejects tampered durable benchmark evidence from a major release tag", () => {
+  const fixture = majorReleaseFixture();
+  try {
+    const path = "release-certificates/v5.0.1-benchmark-results.json.br";
+    const document = JSON.parse(brotliDecompressSync(readFileSync(join(fixture.repoRoot, path))));
+    document.results[0].elapsedMs += 1;
+    writeFileSync(
+      join(fixture.repoRoot, path),
+      brotliCompressSync(Buffer.from(`${JSON.stringify(document)}\n`), {
+        params: { [constants.BROTLI_PARAM_QUALITY]: 6 },
+      }),
+    );
+    amendMajorReleaseTag(fixture, [path]);
+    assert.throws(
+      () => verifyReleaseReceipt(fixture.repoRoot, "v5.0.1"),
+      /artifact hashes do not match the supplied evidence/u,
     );
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });

@@ -1,0 +1,22 @@
+# 2026-09-21 — Release proof must retain its bound evidence
+
+- **Status:** Resolved
+- **Task/context:** Reviewing whether the certified 36-cell agent comparison remained independently reproducible after the release transaction.
+- **Unexpected observation or failure:** The committed certificate retained result and report hashes, but the corresponding sanitized files lived only in a temporary benchmark directory and could disappear after the run.
+- **Evidence:** A regression could verify the hash-only receipt while `git show` failed for the benchmark result at the major release tag.
+- **Approaches tried:**
+  - **Attempt:** Keep only the result and report hashes in the release certificate.
+    - **Outcome:** Did not work
+    - **Why:** A hash proves integrity only when a verifier still has the bytes; it cannot reconstruct or independently inspect deleted evidence.
+  - **Attempt:** Embed both artifacts inside the main certificate JSON.
+    - **Outcome:** Partial
+    - **Why:** It would preserve bytes but make the primary receipt unnecessarily large and harder to inspect or stream independently.
+  - **Attempt:** Commit separately named Brotli-Q6 result and report artifacts and bind their decoded hashes through the existing benchmark receipt.
+    - **Outcome:** Worked
+    - **Why:** The release tag remains self-contained, bounded, independently inspectable, and fail-closed without exposing private evaluator state.
+- **Root cause:** Certification treated temporary artifact hashes as durable evidence even though the release tag did not retain the sanitized artifact bytes.
+- **Resolution:** Persist certification artifacts in Git-common state, copy them into deterministic release-certificate paths during the authorized major transaction, revalidate their hashes and semantics directly from the tag, and reject evidence older than 24 hours or materially future-dated throughout the active release transaction.
+- **Verification:** The major release fixture contains all 36 committed result rows, and a tampered committed result is rejected even when recompressed correctly.
+- **Prevention/follow-up:** Any future release evidence hash must have a bounded, sanitized, tag-retained artifact or an explicitly documented external immutable store. When external behavior can drift independently of Git, active release authorization must also impose a freshness bound while historical tag verification remains deterministic.
+- **Reusable learning:** A durable proof must retain both the integrity commitment and the exact safe evidence bytes needed to verify it.
+- **References:** `scripts/release-benchmark-evidence-storage.js`, `scripts/release-certificate-receipt.js`, `scripts/release-flow-certificate.test.js`, `scripts/release-receipt-verification.test.js`

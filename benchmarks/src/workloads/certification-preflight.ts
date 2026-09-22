@@ -20,7 +20,7 @@ import {
   BenchmarkMutableArtifactsUnsafeError,
   isBenchmarkMutableArtifactsUnsafeError,
 } from "./benchmark-run-finalization.ts";
-import type { CertifiedHarnessBinding } from "./certification-binding.ts";
+import type { CertifiedHarnessCoreBinding } from "./certification-binding.ts";
 import { createCertifiedInstructionChallenge } from "./certification-instruction-challenge.ts";
 import { parseRecording } from "./recording-metrics.ts";
 import type { AgentId, RunnerOptions } from "./runner-options.ts";
@@ -108,7 +108,7 @@ export async function runCertifiedPreflights(
   output: string,
   deadline: number,
   receiptValue: string,
-  binding: CertifiedHarnessBinding,
+  binding: CertifiedHarnessCoreBinding,
   runCommand: typeof runRecordedCommand = runRecordedCommand,
 ): Promise<CertifiedInstructionReceipt[]> {
   const receipts: CertifiedInstructionReceipt[] = [];

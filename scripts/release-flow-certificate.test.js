@@ -2,20 +2,60 @@ import assert from "node:assert/strict";
 import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { brotliDecompressSync } from "node:zlib";
 
 import {
   readReleaseAuditState,
   writeReleaseAuditState,
 } from "./release-audit-certificate.js";
+import { persistBenchmarkCertification } from "./release-benchmark-certification.js";
 import { verifyReleaseReceipt } from "./release-certificate-receipt.js";
 import {
   cloneReleaseFlowFixtureRepository,
   createReleaseFlowFixture,
   git,
+  gitBuffer,
   runFixtureRelease,
   write,
+  writeFixtureBenchmarkCertification,
 } from "./release-flow-test-fixture.js";
 import { reconcileReleaseState } from "./release-transaction.js";
+
+test("benchmark certification cannot be minted without bound result and report artifacts", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    assert.throws(
+      () => persistBenchmarkCertification(fixture.repoRoot, {}),
+      /artifact paths has an unexpected field set/u,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("benchmark certification rejects a self-declared passing matrix without runtime evidence", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    assert.throws(
+      () => writeFixtureBenchmarkCertification(fixture, "5.0.1", { sparseRows: true }),
+      /runtime evidence/u,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("benchmark certification rejects a matrix where P only ties both baselines", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    assert.throws(
+      () => writeFixtureBenchmarkCertification(fixture, "5.0.1", { tiedPerformance: true }),
+      /P did not strictly exceed pi quality for task typescript-calculator/u,
+    );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
 
 test("release automatically audits, consumes the certificate, and atomically pushes", () => {
   const fixture = createReleaseFlowFixture();
@@ -61,11 +101,22 @@ test("explicit major authorization survives the full certified release flow", ()
     assert.notEqual(unauthorized.status, 0);
     assert.match(`${unauthorized.stdout}\n${unauthorized.stderr}`, /explicit authorization/);
 
+    writeFixtureBenchmarkCertification(fixture);
     const result = runFixtureRelease(fixture, "5.0.1", { allowMajor: true });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(JSON.parse(readFileSync(join(fixture.repoRoot, "package.json"))).version, "5.0.1");
     const verified = verifyReleaseReceipt(fixture.repoRoot, "v5.0.1");
     assert.equal(verified.receipt.allowMajor, true);
+    const resultEvidence = JSON.parse(
+      brotliDecompressSync(
+        gitBuffer(
+          fixture.repoRoot,
+          "show",
+          "v5.0.1:release-certificates/v5.0.1-benchmark-results.json.br",
+        ),
+      ),
+    );
+    assert.equal(resultEvidence.results.length, 36);
     assert.equal(readReleaseAuditState(fixture.repoRoot).state, "released");
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });

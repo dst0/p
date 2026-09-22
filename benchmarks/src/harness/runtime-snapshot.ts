@@ -29,18 +29,20 @@ const BENCHMARK_CLOSURE_SEEDS = [
   BENCHMARK_SEED_HELPER,
   join(BENCHMARK_SOURCE_ROOT, "harness", "seed-helper-process.ts"),
 ];
+const BENCHMARK_RELEASE_MODULES = new Set([
+  join("scripts", "release-benchmark-artifact-validation.js"),
+  join("scripts", "release-benchmark-artifacts.js"),
+  join("scripts", "release-benchmark-certification.js"),
+  join("scripts", "release-benchmark-evidence-storage.js"),
+]);
 const EVALUATOR_FIXTURE_NAMES = new Set(["hidden.test.ts", "rubric.json"]);
-
 export type BenchmarkFixtureScope = "all" | "candidate" | "evaluator";
-
 export interface RuntimeSnapshotOptions {
   fixtureScope?: BenchmarkFixtureScope;
 }
-
 export function assertEmptyOutputDirectory(path: string): void {
   if (existsSync(path) && readdirSync(path).length > 0) throw new Error(`Output directory is not empty: ${path}`);
 }
-
 export function createRuntimeSnapshot(
   repoRoot: string,
   temporaryParent: string,
@@ -68,11 +70,9 @@ export function createRuntimeSnapshot(
     throw error;
   }
 }
-
 export function createCandidateRuntimeSnapshot(repoRoot: string, temporaryParent: string): string {
   return createRuntimeSnapshot(repoRoot, temporaryParent, { fixtureScope: "candidate" });
 }
-
 export function copyBenchmarkEvaluatorFixtures(
   repoRoot: string,
   destination: string,
@@ -80,7 +80,6 @@ export function copyBenchmarkEvaluatorFixtures(
 ): void {
   copyBenchmarkFixtures(repoRoot, destination, "evaluator", copyOptions);
 }
-
 function copyBenchmarkFixtures(
   repoRoot: string,
   destination: string,
@@ -91,7 +90,6 @@ function copyBenchmarkFixtures(
   const target = join(destination, "benchmarks", "fixtures");
   copyFixtureTree(source, target, scope, copyOptions);
 }
-
 function copyFixtureTree(
   source: string,
   target: string,
@@ -120,11 +118,9 @@ function copyFixtureTree(
     }
   }
 }
-
 export function benchmarkRunnerPath(snapshot: string): string {
   return join(snapshot, BENCHMARK_RUNNER);
 }
-
 export function benchmarkSeedHelperPath(snapshot: string): string {
   return join(snapshot, BENCHMARK_SEED_HELPER);
 }
@@ -145,22 +141,27 @@ export function snapshotBenchmarkRunnerClosure(
     const source = pending.pop();
     if (source === undefined) break;
     if (copied.has(source)) continue;
-    if (!isPathInside(sourceRoot, source) || !source.endsWith(".ts") || !existsSync(source)) {
-      throw new Error(`Benchmark source import escapes or is missing from benchmarks/src: ${source}`);
+    if (!isApprovedBenchmarkSourceModule(repoRoot, sourceRoot, source) || !existsSync(source)) {
+      throw new Error(`Benchmark source import escapes its approved runtime closure or is missing: ${source}`);
     }
     copied.add(source);
-    const destination = join(snapshot, BENCHMARK_SOURCE_ROOT, relative(sourceRoot, source));
+    const destination = join(snapshot, relative(repoRoot, source));
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(source, destination, copyOptions);
     const contents = readFileSync(source, "utf8");
     for (const specifier of relativeModuleSpecifiers(contents, source)) {
       const imported = resolve(dirname(source), specifier);
-      if (isPathInside(sourceRoot, imported)) pending.push(imported);
+      if (isApprovedBenchmarkSourceModule(repoRoot, sourceRoot, imported)) pending.push(imported);
       else if (!isRuntimePackageModule(repoRoot, imported)) {
-        throw new Error(`Benchmark source import escapes or is missing from benchmarks/src: ${imported}`);
+        throw new Error(`Benchmark source import escapes its approved runtime closure or is missing: ${imported}`);
       }
     }
   }
+}
+
+function isApprovedBenchmarkSourceModule(repoRoot: string, sourceRoot: string, path: string): boolean {
+  if (isPathInside(sourceRoot, path) && path.endsWith(".ts")) return true;
+  return path.endsWith(".js") && BENCHMARK_RELEASE_MODULES.has(relative(repoRoot, path));
 }
 
 function isRuntimePackageModule(repoRoot: string, path: string): boolean {

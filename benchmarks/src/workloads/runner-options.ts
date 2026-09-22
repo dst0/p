@@ -47,6 +47,7 @@ export type RunnerOptions = {
   maxDurationRatio?: number;
   maxTokenRatio?: number;
   maxCostRatio?: number;
+  releaseTarget?: string;
   help?: boolean;
   signal?: AbortSignal;
 };
@@ -137,6 +138,7 @@ function assignStringOption(options: RunnerOptions, argument: string, value: str
     if (!isThinkingLevel(value)) throw new Error("--thinking must be off, minimal, low, medium, high, or xhigh");
     options.thinking = value;
   } else if (argument === "--output") options.output = resolve(value);
+  else if (argument === "--release-target") options.releaseTarget = value;
   else if (argument === "--certified-network-host") {
     options.certifiedNetworkHosts ??= [];
     options.certifiedNetworkHosts.push(value);
@@ -170,7 +172,7 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
       .filter(Boolean),
   };
   const stringOptions = new Set(
-    "--model --p-cli --project-instruction-probe --project-instruction-proof-receipt --agents --models-file --pi-version --pi-executable --kilo-model --kilo-version --kilo-config --kilo-executable --expected-resolved-model --codex-model --codex-config --agy-model --task --project-instructions --project-instruction-compiler-model --task-verification --project-instructions-file --thinking --output --certified-network-host".split(
+    "--model --p-cli --project-instruction-probe --project-instruction-proof-receipt --agents --models-file --pi-version --pi-executable --kilo-model --kilo-version --kilo-config --kilo-executable --expected-resolved-model --codex-model --codex-config --agy-model --task --project-instructions --project-instruction-compiler-model --task-verification --project-instructions-file --thinking --output --release-target --certified-network-host".split(
       " ",
     ),
   );
@@ -222,6 +224,10 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
     throw new Error(`Unknown option: ${argument}`);
   }
   if (options.help) return options;
+  if (options.releaseTarget && !options.certified) throw new Error("--release-target requires --certified");
+  if (options.releaseTarget && !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u.test(options.releaseTarget)) {
+    throw new Error("--release-target must be a canonical semantic version");
+  }
   if (options.certified) {
     if (options.thinking) {
       throw new Error(
@@ -244,6 +250,9 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
       throw new Error("Certified mode requires exactly agents p, pi, and kilo");
     }
     if (options.runs < 3) throw new Error("Certified mode requires at least 3 runs");
+    if (options.releaseTarget && options.runs !== 3) {
+      throw new Error("Release certification requires exactly 3 runs");
+    }
     if (options.task) throw new Error("Certified mode requires all 4 canonical benchmark tasks");
     if (!options.model) throw new Error("--model is required for certified comparison mode");
     if (!options.expectedResolvedModel) throw new Error("--expected-resolved-model is required in certified mode");

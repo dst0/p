@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  certifiedCellHardDeadline,
+  certifiedSemanticProgressExtensionSeconds,
+  remainingCertifiedCellTimeoutMs,
+} from "../../src/workloads/certification-runtime-budget.ts";
 import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
 import { benchmarkTasks } from "../../src/workloads/task-registry.ts";
 
@@ -19,7 +24,8 @@ test("documented certified arguments derive a deadline covering every cell and p
   const taskSeconds = taskBudget * options.agents.length * options.runs;
   const preflightSeconds = 60 * options.agents.length;
   const kiloStartupSeconds = options.kiloStartupTimeoutSeconds;
-  const orchestrationSeconds = 300 + 30 * options.agents.length * options.runs * benchmarkTasks.length;
+  const orchestrationSeconds =
+    300 + certifiedSemanticProgressExtensionSeconds * options.agents.length * options.runs * benchmarkTasks.length;
   assert.equal(options.maxRuntimeSeconds, taskSeconds + preflightSeconds + kiloStartupSeconds + orchestrationSeconds);
 });
 
@@ -42,4 +48,12 @@ test("certified mode rejects an explicitly inadequate global deadline", () => {
     () => parseRunnerArgs([...documentedArgs, "--max-runtime-seconds", "900"]),
     /max-runtime-seconds.*at least/iu,
   );
+});
+
+test("certified cells have a fixed 30-second semantic-progress extension bounded by the global deadline", () => {
+  const startedAt = 10_000;
+  const cellDeadline = certifiedCellHardDeadline(startedAt, 90);
+  assert.equal(cellDeadline, startedAt + (90 + certifiedSemanticProgressExtensionSeconds) * 1000);
+  assert.equal(remainingCertifiedCellTimeoutMs(cellDeadline, startedAt + 600_000, startedAt + 80_000), 40_000);
+  assert.equal(remainingCertifiedCellTimeoutMs(cellDeadline, startedAt + 100_000, startedAt + 80_000), 20_000);
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -60,6 +60,72 @@ test("confirmed-exit proof and recording failures still sanitize auth, receipts,
     }),
   );
   assert.deepEqual(calls, ["agent/auth", "receipt", "freeze"]);
+});
+
+test("release evidence is published only after every cleanup succeeds", () => {
+  const calls: string[] = [];
+  finalizeAgentBenchmarkRun({
+    mutableArtifactsSafe: true,
+    finalizeAgentResources: () => calls.push("agent/auth"),
+    sanitizeReceipt: () => calls.push("receipt"),
+    validateReleaseEvidence: () => calls.push("recheck"),
+    disposeFreeze: () => calls.push("freeze"),
+    publishReleaseEvidence: () => calls.push("release"),
+  });
+  assert.deepEqual(calls, ["agent/auth", "recheck", "receipt", "freeze", "release"]);
+
+  calls.length = 0;
+  finalizeAgentBenchmarkRun({
+    primaryError: new Error("failed run"),
+    mutableArtifactsSafe: true,
+    finalizeAgentResources: () => calls.push("agent/auth"),
+    sanitizeReceipt: () => calls.push("receipt"),
+    validateReleaseEvidence: () => calls.push("recheck"),
+    disposeFreeze: () => calls.push("freeze"),
+    publishReleaseEvidence: () => calls.push("release"),
+  });
+  assert.deepEqual(calls, ["agent/auth", "receipt", "freeze"]);
+});
+
+test("release recheck precedes intentional deletion of bound private instructions", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-finalization-order-"));
+  const instructions = join(root, "instructions");
+  const boundInstructions = join(instructions, "AGENTS.md");
+  try {
+    mkdirSync(instructions);
+    writeFileSync(boundInstructions, "private receipt\n");
+    finalizeAgentBenchmarkRun({
+      mutableArtifactsSafe: true,
+      finalizeAgentResources: () => {},
+      validateReleaseEvidence: () => assert.equal(readFileSync(boundInstructions, "utf8"), "private receipt\n"),
+      sanitizeReceipt: () => rmSync(instructions, { recursive: true }),
+      disposeFreeze: () => {},
+      publishReleaseEvidence: () => assert.equal(existsSync(instructions), false),
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release recheck failure still disposes the freeze and suppresses publication", () => {
+  const calls: string[] = [];
+  assert.throws(
+    () =>
+      finalizeAgentBenchmarkRun({
+        mutableArtifactsSafe: true,
+        finalizeAgentResources: () => calls.push("agent/auth"),
+        sanitizeReceipt: () => calls.push("receipt"),
+        validateReleaseEvidence: () => {
+          calls.push("recheck");
+          throw new Error("runtime changed");
+        },
+        disposeFreeze: () => calls.push("freeze"),
+        publishReleaseEvidence: () => calls.push("release"),
+      }),
+    (error) =>
+      error instanceof AggregateError && error.errors.some((nested) => /runtime changed/u.test(String(nested))),
+  );
+  assert.deepEqual(calls, ["agent/auth", "recheck", "receipt", "freeze"]);
 });
 
 test("unconfirmed termination never traverses a workspace swapped to an external symlink", () => {

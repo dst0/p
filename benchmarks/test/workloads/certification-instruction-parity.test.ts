@@ -153,12 +153,14 @@ test("all three preflights receive only the question while runtime auto-loading 
       "--project-instructions-file",
       augmented.augmentedPath,
     ]);
+    runnerOpts.candidateRuntimePath = root;
 
     const mockBinding = {
       node: { path: process.execPath, version: process.version, sha256: "a".repeat(64) },
       pSnapshot: { path: root, version: "0.4.0", sha256: "b".repeat(64) },
       pi: { path: mockCli, version: "1.0.0", sha256: "c".repeat(64) },
       kilo: { path: mockCli, version: "1.0.0", sha256: "d".repeat(64) },
+      modelConfiguration: { sha256: "e".repeat(64) },
       projectInstructions: {
         path: augmented.augmentedPath,
         sha256: augmented.augmentedSha256,
@@ -229,12 +231,14 @@ test("fake agent echoing argv fails because receipt value is never passed in arg
       "--project-instructions-file",
       augmented.augmentedPath,
     ]);
+    runnerOpts.candidateRuntimePath = root;
 
     const mockBinding = {
       node: { path: process.execPath, version: process.version, sha256: "a".repeat(64) },
       pSnapshot: { path: root, version: "0.4.0", sha256: "b".repeat(64) },
       pi: { path: mockCli, version: "1.0.0", sha256: "c".repeat(64) },
       kilo: { path: mockCli, version: "1.0.0", sha256: "d".repeat(64) },
+      modelConfiguration: { sha256: "e".repeat(64) },
       projectInstructions: {
         path: augmented.augmentedPath,
         sha256: augmented.augmentedSha256,

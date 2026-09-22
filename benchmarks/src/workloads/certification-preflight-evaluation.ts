@@ -1,4 +1,4 @@
-import type { CertifiedHarnessBinding } from "./certification-binding.ts";
+import type { CertifiedHarnessCoreBinding } from "./certification-binding.ts";
 import type { CertifiedInstructionReceipt } from "./certification-preflight.ts";
 
 const HASH_RE = /^[a-f0-9]{64}$/u;
@@ -51,7 +51,7 @@ function validateReceiptOutcome(
 }
 
 export function evaluateInstructionParityReceipts(
-  binding: CertifiedHarnessBinding | undefined,
+  binding: CertifiedHarnessCoreBinding | undefined,
   canonicalAgents: readonly string[],
   expectedModel?: string,
 ): string[] {

@@ -1,92 +1,72 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { CertifiedHarnessBinding } from "./certification-binding.ts";
-import type { BenchmarkTask } from "./task-definition.ts";
+import { isBenchmarkProcessTerminationUnconfirmedError } from "../harness/process-termination-error.ts";
+import { evaluateSealedHoldoutTask, type SealedHoldoutExecutionControl } from "./certification-holdout-execution.ts";
+import { recheckSealedHoldoutPlan, type SealedHoldoutPlan } from "./certification-holdout-plan.ts";
+import { type CertifiedTaskId, certifiedTaskMaxScoreFor } from "./certified-task-score-policy.ts";
+import type { BenchmarkTask, BenchmarkTaskResult } from "./task-definition.ts";
 
-const challengeName = "certified-holdout-challenge.json";
-const resultName = "certified-holdout-result.json";
-const hashPattern = /^[a-f0-9]{64}$/u;
+export type CertifiedSealedHoldout = {
+  plan: SealedHoldoutPlan;
+  holdoutSha256: string;
+  executionControl?: SealedHoldoutExecutionControl;
+};
 
-interface CertifiedHoldoutChallenge {
-  schemaVersion: 1;
-  taskId: string;
-  nonce: string;
-  values: number[];
-}
+const holdoutWeights: Readonly<Record<string, number>> = {
+  "typescript-calculator": 2,
+  "monolith-split": 2,
+  "event-sourced-inventory": 8,
+  "durable-workflow-saga": 12,
+};
 
 export function createCertifiedTaskVariants(
   tasks: readonly BenchmarkTask[],
-  binding: CertifiedHarnessBinding,
+  holdout: CertifiedSealedHoldout,
 ): BenchmarkTask[] {
-  if (!hashPattern.test(binding.pSnapshot.sha256) || /^0+$/u.test(binding.pSnapshot.sha256)) {
-    throw new Error("Certified holdouts require a bound candidate runtime identity");
+  const plans = new Map(holdout.plan.taskPlans.map((plan) => [plan.taskId, plan]));
+  if (tasks.length !== plans.size || tasks.some((task) => !plans.has(task.id as CertifiedTaskId))) {
+    throw new Error("Sealed holdout task plan does not match the certified task matrix");
   }
-  return tasks.map(createVariant);
-}
-
-function createVariant(task: BenchmarkTask): BenchmarkTask {
-  const challenge: CertifiedHoldoutChallenge = {
-    schemaVersion: 1,
-    taskId: task.id,
-    nonce: randomBytes(24).toString("hex"),
-    values: Array.from({ length: 7 }, () => randomInt(10_000, 1_000_000)),
-  };
-  const challengeText = `${JSON.stringify(challenge, null, 2)}\n`;
-  const expected = expectedDigest(challenge);
-  return {
-    ...task,
-    files: { ...task.files, [challengeName]: challengeText },
-    prompt: `${task.prompt}\n\nCertified randomized holdout: preserve ${challengeName}. Sum its integer values, compute lowercase SHA-256 of taskId:nonce:sum, and write only {"digest":"<hex>"} to ${resultName}. This challenge was generated after candidate runtime binding and is required for certification.`,
-    verify(workspace, baseline, finalText, context) {
-      const base = task.verify(workspace, baseline, finalText, context);
-      const challengePreserved = safeRead(join(workspace, challengeName)) === challengeText;
-      const result = parseResult(join(workspace, resultName));
-      const holdoutPassed = challengePreserved && result === expected;
-      return {
-        ...base,
-        passed: base.passed && holdoutPassed,
-        checks: [
-          ...base.checks,
-          {
-            name: "post-binding randomized holdout passed",
-            passed: holdoutPassed,
-            weight: 0,
-            details: challengePreserved ? undefined : "holdout challenge was modified",
-          },
-        ],
-      };
-    },
-  };
-}
-
-function expectedDigest(challenge: CertifiedHoldoutChallenge): string {
-  const sum = challenge.values.reduce((total, value) => total + value, 0);
-  return createHash("sha256").update(`${challenge.taskId}:${challenge.nonce}:${sum}`).digest("hex");
-}
-
-function safeRead(path: string): string | undefined {
-  try {
-    const stat = lstatSync(path);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 1_024) return undefined;
-    return readFileSync(path, "utf8");
-  } catch {
-    return undefined;
-  }
-}
-
-function parseResult(path: string): string | undefined {
-  const source = safeRead(path);
-  if (!source) return undefined;
-  try {
-    const value: unknown = JSON.parse(source);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-    const record = value as Record<string, unknown>;
-    if (Object.keys(record).length !== 1 || typeof record.digest !== "string" || !hashPattern.test(record.digest)) {
-      return undefined;
+  return tasks.map((task) => {
+    const taskId = task.id as CertifiedTaskId;
+    const plan = plans.get(taskId);
+    const maxScore = certifiedTaskMaxScoreFor(taskId);
+    const weight = holdoutWeights[task.id];
+    if (!plan || maxScore === undefined || weight === undefined || task.maxScore + weight !== maxScore) {
+      throw new Error(`Sealed holdout score policy is invalid for task ${task.id}`);
     }
-    return record.digest;
-  } catch {
-    return undefined;
+    return {
+      ...task,
+      maxScore,
+      files: task.files,
+      prompt: task.prompt,
+      verify: async (workspace, baseline, finalText, context): Promise<BenchmarkTaskResult> => {
+        const base = await task.verify(workspace, baseline, finalText, context);
+        const holdoutPassed = await evaluatePlan(workspace, context?.evaluator, holdout, plan);
+        return {
+          ...base,
+          passed: base.passed && holdoutPassed,
+          score: base.score + (holdoutPassed ? weight : 0),
+          maxScore,
+          checks: [...base.checks, { name: "sealed evaluator holdout", passed: holdoutPassed, weight }],
+        };
+      },
+    };
+  });
+}
+
+async function evaluatePlan(
+  workspace: string,
+  evaluator: { path: string; sha256: string } | undefined,
+  holdout: CertifiedSealedHoldout,
+  plan: SealedHoldoutPlan["taskPlans"][number],
+): Promise<boolean> {
+  if (!evaluator) return false;
+  try {
+    recheckSealedHoldoutPlan(evaluator, holdout.plan.coreCandidateSha256, holdout.holdoutSha256);
+    const passed = await evaluateSealedHoldoutTask(evaluator.path, workspace, plan, holdout.executionControl);
+    recheckSealedHoldoutPlan(evaluator, holdout.plan.coreCandidateSha256, holdout.holdoutSha256);
+    return passed;
+  } catch (error) {
+    if (isBenchmarkProcessTerminationUnconfirmedError(error)) throw error;
+    return false;
   }
 }

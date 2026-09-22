@@ -7,6 +7,12 @@ import {
   computeReleaseEvidenceHash,
   stableJson,
 } from "./release-audit-certificate.js";
+import { validateBenchmarkCertification } from "./release-benchmark-certification.js";
+import {
+  persistReleaseBenchmarkEvidence,
+  releaseBenchmarkEvidencePaths,
+  verifyReleaseBenchmarkEvidence,
+} from "./release-benchmark-evidence-storage.js";
 import { hashReleaseInputEntries, releaseInputPathsAtRevision } from "./release-inputs.js";
 import { assertReleaseOnOriginMain } from "./release-origin-policy.js";
 import { assertReleaseTargetVersion } from "./release-target-policy.js";
@@ -84,6 +90,7 @@ export function persistReleaseReceipt(repoRoot, state, releaseDate) {
     evidenceHash: state.evidenceHash,
     evidence: state.evidence,
     allowMajor: state.allowMajor,
+    ...(state.benchmarkCertification ? { benchmarkCertification: state.benchmarkCertification } : {}),
     releaseDate,
   };
   const payloadJson = `${stableJson(payload)}\n`;
@@ -91,14 +98,38 @@ export function persistReleaseReceipt(repoRoot, state, releaseDate) {
     params: { [constants.BROTLI_PARAM_QUALITY]: 6 },
   });
   const absolutePath = `${repoRoot}/${path}`;
+  if (state.benchmarkCertification) {
+    persistReleaseBenchmarkEvidence(repoRoot, state.benchmarkCertification);
+  }
   mkdirSync(`${repoRoot}/release-certificates`, { recursive: true });
   writeFileSync(absolutePath, compressed, { mode: 0o600 });
   return payload;
 }
 
 function validateReceiptState(receipt, expectedVersion) {
+  const expectedFields = [
+    "allowMajor",
+    "baseSha",
+    "certificateId",
+    "evidence",
+    "evidenceHash",
+    "inputHash",
+    "inputPaths",
+    "originMainSha",
+    "releaseDate",
+    "schemaName",
+    "schemaVersion",
+    "targetVersion",
+    ...(receipt.allowMajor === true ? ["benchmarkCertification"] : []),
+  ].sort();
+  if (JSON.stringify(Object.keys(receipt).sort()) !== JSON.stringify(expectedFields)) {
+    throw new Error("Unexpected release receipt field set");
+  }
   if (receipt.schemaVersion !== RECEIPT_SCHEMA_VERSION) {
     throw new Error(`Unsupported release certificate schema: ${receipt.schemaVersion}`);
+  }
+  if (receipt.schemaName !== "release-certificate") {
+    throw new Error(`Unsupported release certificate name: ${receipt.schemaName}`);
   }
   if (receipt.targetVersion !== expectedVersion) {
     throw new Error(`Receipt target ${receipt.targetVersion} does not match release tag ${expectedVersion}`);
@@ -205,6 +236,14 @@ export function verifyReleaseReceipt(repoRoot, tagName) {
     throw new Error("Certified base package version is missing");
   }
   assertReleaseTargetVersion(baseVersion, targetVersion, { allowMajor: receipt.allowMajor });
+  if (receipt.allowMajor) {
+    validateBenchmarkCertification(receipt.benchmarkCertification, {
+      targetVersion: receipt.targetVersion,
+      baseSha: receipt.baseSha,
+      originMainSha: receipt.originMainSha,
+    });
+    verifyReleaseBenchmarkEvidence(repoRoot, tagName, receipt.benchmarkCertification);
+  }
   assertReleaseOnOriginMain(repoRoot, tagSha);
 
   const expectedMutation = computeExpectedReleaseMutation(repoRoot, receipt.baseSha, targetVersion, receipt.releaseDate);
@@ -214,10 +253,14 @@ export function verifyReleaseReceipt(repoRoot, tagName) {
     }
   }
   const receiptPath = `release-certificates/${tagName}.json.br`;
+  const benchmarkEvidencePaths = receipt.allowMajor
+    ? Object.values(releaseBenchmarkEvidencePaths(receipt.targetVersion))
+    : [];
   const expectedCommitPaths = [
     ...expectedMutation.expectedPaths,
     ...expectedMutation.deletedPaths,
     receiptPath,
+    ...benchmarkEvidencePaths,
   ];
   const changedPaths = git(repoRoot, [
     "diff-tree",

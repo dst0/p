@@ -5,8 +5,13 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createBenchmarkEvaluationSnapshot } from "../../src/harness/evaluation-freeze.ts";
 import { hashRuntimeSnapshot } from "../../src/harness/runtime-snapshot.ts";
-import { hashFile, recheckCertifiedHarness } from "../../src/workloads/certification.ts";
+import {
+  bindCertifiedModelConfiguration,
+  hashFile,
+  recheckCertifiedHarness,
+} from "../../src/workloads/certification.ts";
 import { inventoryTask } from "../../src/workloads/inventory.ts";
+import { writeCertifiedModelConfigurationFixture } from "./certification-model-config-fixture.ts";
 
 test("certified evaluation consumes frozen fixtures and fails closed on tampering", () => {
   const root = mkdtempSync(join(tmpdir(), "evaluator-freeze-test-"));
@@ -51,6 +56,13 @@ test("certified evaluation consumes frozen fixtures and fails closed on tamperin
     writeFileSync(fauxKilo, "#!/bin/sh\necho '7.4.17'\n");
     const agentsFile = join(root, "AGENTS.md");
     writeFileSync(agentsFile, "# Rules\n");
+    const modelInputs = writeCertifiedModelConfigurationFixture(root);
+    const modelConfiguration = bindCertifiedModelConfiguration({
+      ...modelInputs,
+      model: "backend/model",
+      kiloModel: "backend/model",
+      expectedResolvedModel: "backend/model",
+    });
 
     assert.throws(
       () =>
@@ -60,8 +72,10 @@ test("certified evaluation consumes frozen fixtures and fails closed on tamperin
             pSnapshot: { path: fauxP, version: "0.4.2", sha256: pSha },
             pi: { path: fauxPi, version: "0.82.1", sha256: hashFile(fauxPi) },
             kilo: { path: fauxKilo, version: "7.4.17", sha256: hashFile(fauxKilo) },
+            modelConfiguration,
             projectInstructions: { path: agentsFile, sha256: hashFile(agentsFile) },
             evaluator: { path: snapshot.path, sha256: snapshot.sha256 },
+            holdoutSha256: "b".repeat(64),
           },
           fauxP,
           pSha,

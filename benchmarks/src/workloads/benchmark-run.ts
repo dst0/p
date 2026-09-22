@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { augmentBenchmarkPath } from "../agents/environment.ts";
@@ -9,19 +8,18 @@ import { createBenchmarkAuthOutputGuard } from "../harness/auth-output-guard.ts"
 import { consumeBenchmarkAuthSource } from "../harness/auth-source.ts";
 import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import { verifyBenchmarkEvaluationSnapshot } from "../harness/evaluation-freeze.ts";
-import { benchmarkModels, modelAliasForAgent } from "../harness/model-attribution.ts";
-import { type BenchmarkResult, createBenchmarkReport } from "../harness/report.ts";
-import { sanitizeBenchmarkEvidence } from "../harness/result-sanitization.ts";
+import { modelAliasForAgent } from "../harness/model-attribution.ts";
+import type { BenchmarkResult } from "../harness/report.ts";
 import { writeBenchmarkStderrLog } from "../harness/stderr-log.ts";
 import { createBenchmarkWorkspace } from "../harness/workspace-repository.ts";
 import { captureRecordedProjectInstructionEvidence } from "../project-instructions/evidence.ts";
 import { sendCommittedProjectInstructionOuterAuthority } from "../project-instructions/outer-authority.ts";
 import { nudgePenaltyPerNudge, runAgentTask } from "./agent-turn-runner.ts";
+import { publishBenchmarkEvidence } from "./benchmark-evidence-publication.ts";
 import { createBenchmarkOutputPath } from "./benchmark-output.ts";
 import { finalizeAgentBenchmarkRun, isBenchmarkMutableArtifactsUnsafeError } from "./benchmark-run-finalization.ts";
 import { validateBenchmarkRuntimeInputs } from "./benchmark-runtime-validation.ts";
 import {
-  finalizeCertifiedReport,
   planRunCells,
   runCertifiedPreflights,
   setupCertifiedBenchmark,
@@ -31,7 +29,6 @@ import { createCertifiedTaskVariants } from "./certification-holdout.ts";
 import { sanitizeCertifiedReceiptArtifacts } from "./certification-receipt-cleanup.ts";
 import { resolveAgentVersions } from "./installed-agent-versions.ts";
 import { parseRecording } from "./recording-metrics.ts";
-import { publishBenchmarkResults } from "./result-publication.ts";
 import { parseRunnerArgs, printRunnerHelp, repoRoot } from "./runner-options.ts";
 import {
   type AgyStartupEvidence,
@@ -80,15 +77,19 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
   let agentDirs: BenchmarkAgentDirectories | undefined;
   let mutableArtifactsSafe = true;
   let primaryError: unknown;
+  let publishReleaseEvidence: (() => void) | undefined;
   let projectInstructionOuterAuthority: Parameters<typeof sendCommittedProjectInstructionOuterAuthority>[1] | undefined;
-  const resultPath = join(output, "results.json");
+  let validateReleaseEvidence: (() => void) | undefined;
   const {
     freeze: evaluationFreeze,
     binding: harnessBinding,
+    holdout,
     receiptValue,
   } = setupCertifiedBenchmark(options, versions, repoRoot, output);
   const selectedTasks =
-    options.certified && harnessBinding ? createCertifiedTaskVariants(requestedTasks, harnessBinding) : requestedTasks;
+    options.certified && harnessBinding && holdout
+      ? createCertifiedTaskVariants(requestedTasks, holdout)
+      : requestedTasks;
   try {
     agentDirs = createBenchmarkAgentDirectories({
       ...options,
@@ -166,7 +167,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
         if (evaluationFreeze && !verifyBenchmarkEvaluationSnapshot(evaluationFreeze.evaluator)) {
           throw new Error("Benchmark evaluator snapshot integrity compromised during execution");
         }
-        const quality = task.verify(
+        const quality = await task.verify(
           workspace,
           baseline,
           metrics.finalText,
@@ -221,56 +222,22 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
         );
       }
     }
-    const reportStartupProbes = Object.fromEntries(
-      Object.entries(startupProbes)
-        .filter(([_, p]) => p?.resolvedModel)
-        .map(([k, p]) => [k, { status: p!.status, resolvedModel: p!.resolvedModel }]),
-    );
-    const summaries = createBenchmarkReport(
+    const publication = publishBenchmarkEvidence({
       options,
       versions,
       results,
       output,
-      selectedTasks,
-      reportStartupProbes,
-      nudgePenaltyPerNudge,
-    );
-    const certification = finalizeCertifiedReport(options, results, output, evaluationFreeze, harnessBinding);
-    const resultDocument = {
-      generatedAt: new Date().toISOString(),
-      agents: options.agents,
-      models: benchmarkModels(options),
-      versions,
-      startupProbes,
-      runs: options.runs,
-      timeoutSeconds: options.timeoutSeconds,
-      maxRuntimeSeconds: options.maxRuntimeSeconds,
-      projectInstructions: options.projectInstructions,
-      taskVerificationMode: options.taskVerificationMode,
-      tasks: selectedTasks.map(({ id, description, timeoutSeconds }) => ({
-        id,
-        description,
-        timeoutSeconds,
-      })),
-      summaries,
-      ...(certification ? { certification } : {}),
-      results,
-    };
-    const sanitized = sanitizeBenchmarkEvidence(resultDocument, {
-      output,
       repoRoot,
-      home: homedir(),
+      tasks: selectedTasks,
+      startupProbes,
+      evaluationFreeze,
+      harnessBinding,
     });
-    projectInstructionOuterAuthority = publishBenchmarkResults(
-      resultPath,
-      sanitized,
-      options.certified,
-      options.projectInstructions,
-    );
-    console.log(`Report: ${join(output, "report.md")}`);
-    if (!results.some((result) => result.status !== "skipped") || (certification && !certification.passed)) {
-      process.exitCode = 1;
-    }
+    projectInstructionOuterAuthority = publication.projectInstructionOuterAuthority;
+    publishReleaseEvidence = publication.publishReleaseEvidence;
+    validateReleaseEvidence = publication.validateReleaseEvidence;
+    console.log(`Report: ${publication.reportPath}`);
+    if (publication.shouldFail) process.exitCode = 1;
   } catch (error) {
     primaryError = error;
     if (isBenchmarkMutableArtifactsUnsafeError(error)) mutableArtifactsSafe = false;
@@ -283,7 +250,9 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
       sanitizeReceipt: (safe) => {
         if (receiptValue) sanitizeCertifiedReceiptArtifacts(output, receiptValue, { mutableArtifactsSafe: safe });
       },
+      validateReleaseEvidence,
       disposeFreeze: () => evaluationFreeze?.dispose(),
+      publishReleaseEvidence,
     });
   }
   if (projectInstructionOuterAuthority) {

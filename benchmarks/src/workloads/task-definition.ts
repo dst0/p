@@ -33,7 +33,7 @@ export type BenchmarkTask = {
     baseline: Readonly<Record<string, string>>,
     finalText: string,
     context?: TaskVerificationContext,
-  ) => BenchmarkTaskResult;
+  ) => BenchmarkTaskResult | Promise<BenchmarkTaskResult>;
 };
 
 export const canonicalTaskTimeoutSeconds = {

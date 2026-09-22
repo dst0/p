@@ -28,6 +28,21 @@ test("complete synthetic 3x4x3 matrix certifies successfully", () => {
   assert.deepEqual(outcome.failures, []);
 });
 
+test("certification rejects the former public task maximum without its sealed holdout weight", () => {
+  const rows = createSyntheticCertifiedMatrix({
+    responseModel: "resolved/test-model",
+    modifyCell: (row) => {
+      if (row.run === 1 && row.agent === "p" && row.task === "typescript-calculator") {
+        row.quality = { ...row.quality!, passed: true, score: 6, rawScore: 6, maxScore: 6 };
+      }
+      return row;
+    },
+  });
+  const outcome = evaluateCertification(rows, certifiedOptions);
+  assert.equal(outcome.passed, false);
+  assert.match(outcome.failures.join("\n"), /row\[0\]\.quality\.maxScore/u);
+});
+
 test("single row per agent must never certify", () => {
   const singleRowPerAgent = [
     createSyntheticCertifiedMatrix({ runs: 1, agents: ["p"] })[0]!,
@@ -215,7 +230,7 @@ test("duration, token, and cost threshold failures against either Pi or Kilo rej
   assert.equal(evaluateCertification(durationFailPi, certifiedOptions).passed, false);
   assert.match(
     evaluateCertification(durationFailPi, certifiedOptions).failures.join("\n"),
-    /P exceeded duration threshold versus pi/u,
+    /P exceeded duration paired threshold versus pi/u,
   );
 
   const tokenFailKilo = createSyntheticCertifiedMatrix({
@@ -226,7 +241,7 @@ test("duration, token, and cost threshold failures against either Pi or Kilo rej
   assert.equal(evaluateCertification(tokenFailKilo, certifiedOptions).passed, false);
   assert.match(
     evaluateCertification(tokenFailKilo, certifiedOptions).failures.join("\n"),
-    /P exceeded token threshold versus kilo/u,
+    /P exceeded token paired threshold versus kilo/u,
   );
 
   const costFailPi = createSyntheticCertifiedMatrix({
@@ -237,7 +252,7 @@ test("duration, token, and cost threshold failures against either Pi or Kilo rej
   assert.equal(evaluateCertification(costFailPi, certifiedOptions).passed, false);
   assert.match(
     evaluateCertification(costFailPi, certifiedOptions).failures.join("\n"),
-    /P exceeded cost threshold versus pi/u,
+    /P exceeded cost paired threshold versus pi/u,
   );
 });
 
@@ -248,6 +263,7 @@ test("instruction parity fails closed on missing, mismatched, or failed receipts
     pSnapshot: { path: "/p", version: "0.4.0", sha256: "b".repeat(64) },
     pi: { path: "/pi", version: "0.82.1", sha256: "c".repeat(64) },
     kilo: { path: "/kilo", version: "7.4.17", sha256: "d".repeat(64) },
+    modelConfiguration: { sha256: "e".repeat(64) },
     projectInstructions: { path: "/AGENTS.md", sha256: "e".repeat(64), receiptSha256: "f".repeat(64) },
   };
   const missingOutcome = evaluateCertification(complete, certifiedOptions, mockBinding);

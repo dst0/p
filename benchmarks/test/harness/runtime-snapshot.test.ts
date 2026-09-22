@@ -130,7 +130,7 @@ test("new snapshots fingerprint source and fixture bytes but exclude tests and h
   }
 });
 
-test("source closure accepts only in-root TypeScript and approved built-package JavaScript", () => {
+test("source closure accepts only approved benchmark, release, and built-package modules", () => {
   const root = mkdtempSync(join(tmpdir(), "benchmark-runtime-closure-"));
   const snapshotParent = mkdtempSync(join(tmpdir(), "benchmark-runtime-closure-copy-"));
   try {
@@ -150,7 +150,49 @@ test("source closure accepts only in-root TypeScript and approved built-package 
     assert.equal(existsSync(join(typeOnlySnapshot, "outside.ts")), false);
     rmSync(typeOnlySnapshot, { recursive: true, force: true });
     writeFileSync(join(root, "benchmarks", "src", "run-agents.ts"), 'import "../../outside.ts";\n');
-    assert.throws(() => createRuntimeSnapshot(root, snapshotParent), /escapes or is missing from benchmarks\/src/u);
+    assert.throws(
+      () => createRuntimeSnapshot(root, snapshotParent),
+      /escapes its approved runtime closure or is missing/u,
+    );
+
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(
+      join(root, "scripts", "release-benchmark-certification.js"),
+      'import { artifacts } from "./release-benchmark-artifacts.js"; import { storage } from "./release-benchmark-evidence-storage.js"; export const release = artifacts && storage;\n',
+    );
+    writeFileSync(
+      join(root, "scripts", "release-benchmark-artifacts.js"),
+      'import { validation } from "./release-benchmark-artifact-validation.js"; export const artifacts = validation;\n',
+    );
+    writeFileSync(
+      join(root, "scripts", "release-benchmark-artifact-validation.js"),
+      "export const validation = true;\n",
+    );
+    writeFileSync(
+      join(root, "scripts", "release-benchmark-evidence-storage.js"),
+      'import { artifacts } from "./release-benchmark-artifacts.js"; export const storage = artifacts;\n',
+    );
+    writeFileSync(
+      join(root, "benchmarks", "src", "run-agents.ts"),
+      'import { release } from "../../scripts/release-benchmark-certification.js"; process.stdout.write(String(release));\n',
+    );
+    const releaseSnapshot = createRuntimeSnapshot(root, snapshotParent);
+    for (const file of [
+      "release-benchmark-artifact-validation.js",
+      "release-benchmark-artifacts.js",
+      "release-benchmark-certification.js",
+      "release-benchmark-evidence-storage.js",
+    ]) {
+      assert.equal(existsSync(join(releaseSnapshot, "scripts", file)), true, file);
+    }
+    rmSync(releaseSnapshot, { recursive: true, force: true });
+
+    writeFileSync(join(root, "scripts", "unapproved.js"), "export const unsafe = true;\n");
+    writeFileSync(join(root, "benchmarks", "src", "run-agents.ts"), 'import "../../scripts/unapproved.js";\n');
+    assert.throws(
+      () => createRuntimeSnapshot(root, snapshotParent),
+      /escapes its approved runtime closure or is missing/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(snapshotParent, { recursive: true, force: true });

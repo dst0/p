@@ -47,6 +47,7 @@ Options:
   --max-duration-ratio <n>    Maximum allowed P / baseline duration ratio (default: 1.0)
   --max-token-ratio <n>       Maximum allowed P / baseline token ratio (default: 1.0)
   --max-cost-ratio <n>        Maximum allowed P / baseline cost ratio (opt-in)
+  --release-target <x.y.z>    Persist release evidence after a passing 3-run certified matrix
   --runs <n>                  Complete repetitions (default: 1, certified requires >= 3)
   --timeout-seconds <n>       Per-agent nominal budget and semantic-inactivity watchdog
                               (default: ${defaults.defaultTimeoutSeconds})

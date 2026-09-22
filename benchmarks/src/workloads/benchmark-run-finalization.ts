@@ -8,7 +8,9 @@ export interface AgentBenchmarkFinalization {
   mutableArtifactsSafe: boolean;
   finalizeAgentResources(): void;
   sanitizeReceipt(mutableArtifactsSafe: boolean): void;
+  validateReleaseEvidence?(): void;
   disposeFreeze(): void;
+  publishReleaseEvidence?(): void;
 }
 
 export class BenchmarkMutableArtifactsUnsafeError extends BenchmarkProcessTerminationUnconfirmedError {
@@ -29,9 +31,15 @@ export function finalizeAgentBenchmarkRun(finalization: AgentBenchmarkFinalizati
   } else {
     cleanupErrors.push(new Error("Mutable artifact cleanup skipped because process-tree termination was unconfirmed"));
   }
+  if (!finalization.primaryError && cleanupErrors.length === 0 && finalization.validateReleaseEvidence) {
+    attempt(finalization.validateReleaseEvidence, cleanupErrors);
+  }
   attempt(() => finalization.sanitizeReceipt(finalization.mutableArtifactsSafe), cleanupErrors);
   attempt(finalization.disposeFreeze, cleanupErrors);
-  if (cleanupErrors.length === 0) return;
+  if (cleanupErrors.length === 0) {
+    if (!finalization.primaryError) finalization.publishReleaseEvidence?.();
+    return;
+  }
   const errors = finalization.primaryError ? [finalization.primaryError, ...cleanupErrors] : cleanupErrors;
   throw new AggregateError(errors, "Agent benchmark failed with cleanup errors");
 }
