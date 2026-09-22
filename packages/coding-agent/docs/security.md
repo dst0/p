@@ -52,6 +52,12 @@ Common patterns are documented in [Containerization](containerization.md):
 
 If you bind-mount a host workspace read/write, writes from inside the container or VM can still modify host files. Use read-only mounts or copy files into and out of the sandbox when you need stronger protection from unintended writes.
 
+## Update Source and Project Endpoints
+
+`p update` reinstalls `@dst0/p` in place with the package manager that installed it. The update check reads the latest version from p's own npm registry entry (`https://registry.npmjs.org/@dst0%2fp/latest`) and, only when that version is newer, reads release notes from the fork's GitHub releases (`https://api.github.com/repos/dst0/p/releases/tags/v<version>`). No response can change which package is installed, and self-update never uninstalls p to install another package.
+
+p's own network endpoints (update check, release notes, install/update telemetry, `/share` viewer links, and provider attribution headers) use only hosts the project controls: the npm registry entry for `@dst0/p`, `github.com/dst0/p`, and `p-agent.pages.dev`. Upstream pi endpoints are never contacted.
+
 ## Reporting Security Issues
 
 To report a security issue, follow the repository [Security Policy](https://github.com/dst0/p-mono/blob/main/SECURITY.md). Do not open a public issue for security-sensitive reports.

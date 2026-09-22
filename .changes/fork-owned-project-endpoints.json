@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Send the install/update telemetry ping and point /share viewer links, OpenRouter attribution, the update notice changelog link, and docs at project-owned hosts (p-agent.pages.dev, github.com/dst0/p) instead of the unowned p.dev and p.pages.dev domains."
+}

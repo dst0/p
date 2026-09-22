@@ -54,13 +54,9 @@ export function isManagedByGlobalPackageManager(
   });
 }
 
-export function getSelfUpdateCommand(
-  packageName: string,
-  npmCommand?: string[],
-  updatePackageName = packageName,
-): SelfUpdateCommand | undefined {
+export function getSelfUpdateCommand(packageName: string, npmCommand?: string[]): SelfUpdateCommand | undefined {
   const method = detectInstallMethod();
-  const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
+  const command = getSelfUpdateCommandForMethod(method, packageName, npmCommand);
   if (!command) {
     return undefined;
   }
@@ -74,26 +70,22 @@ export function getSelfUpdateCommand(
   return command;
 }
 
-export function getSelfUpdateUnavailableInstruction(
-  packageName: string,
-  npmCommand?: string[],
-  updatePackageName = packageName,
-): string {
+export function getSelfUpdateUnavailableInstruction(packageName: string, npmCommand?: string[]): string {
   const method = detectInstallMethod();
   if (method === "bun-binary") {
-    return `Download from: https://github.com/dst0/p-mono/releases/latest`;
+    return `Download from: https://github.com/dst0/p/releases/latest`;
   }
   if (method === "source-checkout") {
     return `Run: cd ${findGitRoot(getPackageDir())} && git pull && npm run build`;
   }
-  const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
+  const command = getSelfUpdateCommandForMethod(method, packageName, npmCommand);
   if (command) {
     if (isManagedByGlobalPackageManager(method, packageName, npmCommand) && !isSelfUpdatePathWritable()) {
       return `This installation is managed by a global ${method} install, but the install path is not writable. Update it yourself with: ${command.display}`;
     }
     return `This installation is not managed by a global ${method} install. Update it with the package manager, wrapper, or source checkout that provides it.`;
   }
-  return `Update ${updatePackageName} using the package manager, wrapper, or source checkout that provides this installation.`;
+  return `Update ${packageName} using the package manager, wrapper, or source checkout that provides this installation.`;
 }
 
 export function getUpdateInstruction(packageName: string): string {

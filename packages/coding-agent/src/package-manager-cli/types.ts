@@ -20,7 +20,6 @@ export interface PackageCommandOptions {
 }
 
 export interface SelfUpdatePlan {
-  packageName: string;
   shouldRun: boolean;
   note?: string;
 }

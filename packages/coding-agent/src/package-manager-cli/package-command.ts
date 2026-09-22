@@ -171,13 +171,9 @@ export async function handlePackageCommand(
             process.exitCode = 1;
             return true;
           }
-          const selfUpdateCommand = getSelfUpdateCommand(
-            PACKAGE_NAME,
-            selfUpdateNpmCommand,
-            selfUpdatePlan.packageName,
-          );
+          const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand);
           if (!selfUpdateCommand) {
-            printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdatePlan.packageName);
+            printSelfUpdateUnavailable(selfUpdateNpmCommand);
             process.exitCode = 1;
             return true;
           }

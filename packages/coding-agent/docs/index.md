@@ -17,7 +17,7 @@ npm install -g --ignore-scripts @dst0/p
 On Linux or macOS, you can also use the installer:
 
 ```bash
-curl -fsSL https://p.pages.dev/install.sh | sh
+curl -fsSL https://p-agent.pages.dev/install.sh | sh
 ```
 
 To uninstall p itself, use npm for curl and npm installs:

@@ -26,9 +26,9 @@ export function updateTargetIncludesExtensions(target: UpdateTarget): boolean {
   return target.type === "all" || target.type === "extensions";
 }
 
-export function printSelfUpdateUnavailable(npmCommand?: string[], updatePackageName = PACKAGE_NAME): void {
+export function printSelfUpdateUnavailable(npmCommand?: string[]): void {
   console.error(`error: ${APP_NAME} cannot self-update this installation.`);
-  console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand, updatePackageName));
+  console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand));
 
   const entrypoint = process.argv[1];
   if (entrypoint) {
@@ -61,46 +61,44 @@ export function printSelfUpdateNote(note: string): void {
   console.log();
 }
 
+/** Self-update always reinstalls PACKAGE_NAME; the version check only decides whether to run and which notes to show. */
 export async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan> {
   if (force) {
-    return { packageName: PACKAGE_NAME, shouldRun: true };
+    return { shouldRun: true };
   }
 
   try {
     const latestRelease = await getLatestPiRelease(VERSION);
-    const packageName = latestRelease?.packageName ?? PACKAGE_NAME;
-    if (!latestRelease || packageName !== PACKAGE_NAME || isNewerPackageVersion(latestRelease.version, VERSION)) {
-      return { packageName, shouldRun: true, ...(latestRelease?.note ? { note: latestRelease.note } : {}) };
+    if (!latestRelease || isNewerPackageVersion(latestRelease.version, VERSION)) {
+      return { shouldRun: true, ...(latestRelease?.note ? { note: latestRelease.note } : {}) };
     }
   } catch {
-    return { packageName: PACKAGE_NAME, shouldRun: true };
+    return { shouldRun: true };
   }
 
   console.log(chalk.green(`${APP_NAME} is already up to date (v${VERSION})`));
-  return { packageName: PACKAGE_NAME, shouldRun: false };
+  return { shouldRun: false };
 }
 
 export async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
   console.log(chalk.dim(`Updating ${APP_NAME} with ${command.display}...`));
-  for (const step of command.steps ?? [command]) {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawnProcess(step.command, step.args, {
-        stdio: "inherit",
-      });
-      child.on("error", (error) => {
-        reject(error);
-      });
-      child.on("close", (code, signal) => {
-        if (code === 0) {
-          resolve();
-        } else if (signal) {
-          reject(new Error(`${step.display} terminated by signal ${signal}`));
-        } else {
-          reject(new Error(`${step.display} exited with code ${code ?? "unknown"}`));
-        }
-      });
+  await new Promise<void>((resolve, reject) => {
+    const child = spawnProcess(command.command, command.args, {
+      stdio: "inherit",
     });
-  }
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+      } else if (signal) {
+        reject(new Error(`${command.display} terminated by signal ${signal}`));
+      } else {
+        reject(new Error(`${command.display} exited with code ${code ?? "unknown"}`));
+      }
+    });
+  });
 }
 
 export function prepareWindowsNpmSelfUpdate(): void {

@@ -137,7 +137,7 @@ export function do_showWarning(self: InteractiveMode, warningMessage: string): v
 export function do_showNewVersionNotification(self: InteractiveMode, release: LatestPiRelease): void {
   const action = theme.fg("accent", `${APP_NAME} update`);
   const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
-  const changelogUrl = "https://p.dev/changelog";
+  const changelogUrl = `https://github.com/dst0/p/releases/tag/v${release.version}`;
   const changelogLink = getCapabilities().hyperlinks
     ? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
     : theme.fg("accent", changelogUrl);

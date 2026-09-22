@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Self-update no longer follows upstream pi: the update check reads p's own npm registry entry instead of pi.dev, `p update` always reinstalls @dst0/p and never uninstalls p to install a package named by a remote response, and update notes come only from the fork's GitHub releases."
+}
