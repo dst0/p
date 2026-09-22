@@ -1,0 +1,37 @@
+# 2026-09-23 — A removed third-party action silently broke Pages deploys
+
+- **Status:** Partial
+- **Task/context:** Restore the `Deploy Cloudflare Pages` workflow (`.github/workflows/deploy-pages.yml`). It publishes `packages/site/dist` to the `p-agent` Pages project on every `main` push.
+- **Unexpected observation or failure:**
+  - Seventeen consecutive runs failed at job setup with ``Unable to resolve action `cloudflare/pages-action`, not found``, covering 17 different commits between 2026-09-21T02:24Z (run 35554059853) and 2026-09-22T22:32Z (run 35792891835).
+  - The last success was run 35166108120 on 2026-09-17.
+  - The workflow is not a required check, so nobody noticed.
+- **Evidence:**
+  - `gh api repos/cloudflare/pages-action` returns 404.
+  - The last successful log shows `pages-action@v1` running `npx wrangler@2.21.3 pages deploy` outside the npm workspace. It warned that `gitToCommitMetadata` is an unknown input and created no GitHub deployment. The runner used npm 10.9.8.
+- **Approaches tried:**
+  - **Attempt:** Use `cloudflare/wrangler-action` (Cloudflare's documented Pages direct-upload action) with its defaults.
+    - **Outcome:** Rejected.
+    - **Why:** Without `wranglerVersion`, v4 installs the floating `4` range. If Wrangler is missing from the working directory, it runs `npm i wrangler@…` there. At the repository root that resolves the whole npm workspace graph with lifecycle scripts enabled, and npm 10 has already failed on this monorepo's graph (see `docs/leanings/2026-09-21-release-binary-install-workspace-graph.md`).
+  - **Attempt:** Install Wrangler from a separate reviewed project, `.github/pages-deploy/`, with an exact `wrangler` dependency and a lockfile, using `npm ci --ignore-scripts`. Run the action from that `workingDirectory` with the same exact `wranglerVersion`, so its version probe finds the installed Wrangler and skips its own install.
+    - **Outcome:** Worked (local evidence only; see Verification).
+    - **Why:** Deploy-time resolution becomes reproducible and stays outside the workspace graph. All 91 locked packages have registry integrity and were at least two days old when locked.
+- **Root cause:** The workflow depended on a third-party action whose repository was removed upstream. It sat in a non-required workflow whose failures nobody watched. SHA pinning alone would not have prevented this, because a pinned SHA in a deleted repository fails the same way.
+- **Resolution:**
+  - `wrangler-action` is pinned to the v4.0.0 commit `ebbaa1584979971c8614a24965b4405ff95890e0`, checked with `gh api repos/cloudflare/wrangler-action/commits/v4.0.0`. The floating `v4` tag points to the same commit. v4.1.x was one day old and did not meet the repository's two-day release-age convention.
+  - Wrangler is pinned to `4.135.0`, and `--branch` and `--commit-hash` are passed explicitly.
+  - `npm_config_ignore_scripts=true` is set on the step in case the action ever reinstalls.
+  - `actions/checkout` and `actions/setup-node` are pinned to the SHAs already reviewed in `build-binaries.yml`.
+  - The job has a timeout.
+  - The unused `deployments: write` permission is dropped; no GitHub deployment was ever created.
+  - `scripts/workflow-action-pins.test.js` (in `test:scripts`) rejects floating non-GitHub action refs and version drift between the workflow, `package.json` and `package-lock.json` in `.github/pages-deploy/`.
+- **Verification:**
+  - `node --test scripts/workflow-action-pins.test.js` fails on the previous workflows, on a mismatched `wranglerVersion`, and without the ignore-scripts env; it passes on the new workflow.
+  - In a disposable clone, npm 10.9.8 ran `npm ci --ignore-scripts` in `.github/pages-deploy` and installed 39 packages without touching the root lockfile. `npx --no-install wrangler --version` then printed `4.135.0`, and `wrangler pages deploy ../../packages/site/dist --project-name=p-agent --branch=main --commit-hash=<sha>` stopped only at the missing `CLOUDFLARE_API_TOKEN`.
+  - A real deploy has not run. It can be tried before merge with a `workflow_dispatch` of this workflow on the pushed branch, which creates a preview deployment.
+- **Prevention/follow-up:**
+  - Watch the first post-merge `Deploy Cloudflare Pages` run.
+  - Alert on failed `main` runs of workflows that are not required checks.
+  - `npm-audit.yml` audits only the root lockfile, so extend it to cover `.github/pages-deploy/package-lock.json` if deploy tooling should be audited too.
+- **Reusable learning:** Pin third-party actions to full commit SHAs and install the tools they download from a reviewed lockfile, outside the workspace graph. Still expect upstream removal: a non-required deploy workflow needs failure monitoring, because nothing else surfaces it.
+- **References:** `.github/workflows/deploy-pages.yml`, `.github/pages-deploy/`, `scripts/workflow-action-pins.test.js`, failed runs 35554059853 through 35792891835, last successful run 35166108120.
