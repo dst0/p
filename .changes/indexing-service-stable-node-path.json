@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep the code-indexing service startable after `brew upgrade node` by launching a stable `node` link instead of the versioned Homebrew Cellar binary, and drop empty, relative, missing, duplicate, and temporary directories from the service `PATH`."
+}
