@@ -167,12 +167,12 @@ jobs:
           cd packages/coding-agent/binaries
 
           release_assets=(
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
+            p-darwin-arm64.tar.gz
+            p-darwin-x64.tar.gz
+            p-linux-x64.tar.gz
+            p-linux-arm64.tar.gz
+            p-windows-x64.zip
+            p-windows-arm64.zip
           )
           sha256sum "${release_assets[@]}" > SHA256SUMS
           release_assets+=(SHA256SUMS)
