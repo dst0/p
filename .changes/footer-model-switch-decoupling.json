@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
-  "packages": ["coding-agent"],
+  "packages": [
+    "coding-agent"
+  ],
   "type": "Changed",
-  "summary": "Display model-switch progress and queue progress concurrently in the footer and decouple worker-switch state from agent-queue updates."
+  "summary": "Show orchestrator queue, model-switch, and loading progress together in the footer, and keep them visible in narrow terminals."
 }

@@ -36,6 +36,12 @@ export function formatQueuedProgress(queued: { position: number; queuedAhead: nu
   return parts.join(" ");
 }
 
+/** Drop the provider/group prefix (e.g. "mini-pc/") so switch and loading states fit narrow footers. */
+export function formatProgressModelName(model: string): string {
+  const slash = model.lastIndexOf("/");
+  return slash >= 0 && slash < model.length - 1 ? model.slice(slash + 1) : model;
+}
+
 export function formatQueuedSpinner(now = Date.now()): string {
   const frameIndex = Math.floor(now / QUEUED_FOOTER_ANIMATION_MS) % QUEUED_SPINNER_FRAMES.length;
   return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
