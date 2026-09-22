@@ -111,11 +111,18 @@ describe("interactive message event handler", () => {
     mode.getRecentModelSwitch.mockReturnValue({ fromModel: "old", toModel: "new" });
     expect(message(mode, { type: "request_start", model: "test" })).toBe(true);
     expect(mode.footerDataProvider.setModelSwitchProgress).toHaveBeenCalled();
+    expect(mode.footerDataProvider.setSendingProgress).not.toHaveBeenCalledWith({ model: "model" });
+
+    mode.getRecentModelSwitch.mockReturnValue(undefined);
+    message(mode, { type: "request_start", model: "test" });
     expect(mode.footerDataProvider.setSendingProgress).toHaveBeenCalledWith({ model: "model" });
 
     mode.footerDataProvider.getQueuedProgress.mockReturnValue({ source: "llm-orchestrator" });
     message(mode, { type: "request_start", model: "test" });
-    expect(mode.footerDataProvider.clearProgress).toHaveBeenLastCalledWith({ preserveQueued: true });
+    expect(mode.footerDataProvider.clearProgress).toHaveBeenLastCalledWith({
+      preserveQueued: true,
+      preserveModelSwitch: true,
+    });
 
     const custom = { role: "custom", customType: "notice", content: "hello", display: true };
     const user = { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 };
@@ -123,6 +130,11 @@ describe("interactive message event handler", () => {
     message(mode, { type: "message_start", message: custom });
     message(mode, { type: "message_start", message: user });
     message(mode, { type: "message_start", message: assistant });
+    expect(mode.footerDataProvider.clearProgress).toHaveBeenLastCalledWith({
+      preserveQueued: true,
+      preserveModelSwitch: true,
+    });
+    expect(mode.footerDataProvider.setPrefillProgress).not.toHaveBeenCalledWith({ percent: 0, elapsedMs: 0 });
     expect(mode.addMessageToChat).toHaveBeenCalledTimes(2);
     expect(mode.updatePendingMessagesDisplay).toHaveBeenCalled();
     expect(componentDoubles.assistants).toHaveLength(1);

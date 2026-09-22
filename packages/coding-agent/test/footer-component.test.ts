@@ -127,6 +127,25 @@ describe("FooterComponent", () => {
     expect(queuedLine!).not.toMatch(/\d+s/);
   });
 
+  it("renders queue, model switch, and loading progress together", () => {
+    const footer = new FooterComponent(createSession("normal"), {
+      ...createFooterData(),
+      getQueuedProgress: () => ({
+        position: 1,
+        queuedAhead: 0,
+        queue: "worker",
+        source: "llm-orchestrator",
+      }),
+      getModelSwitchProgress: () => ({ fromModel: "old/model", toModel: "new/model" }),
+      getLoadingProgress: () => ({ model: "new/model" }),
+    });
+
+    const output = footer.render(240).join("\n");
+    expect(output).toContain("QUEUED");
+    expect(output).toContain("SWITCHING old/model → new/model");
+    expect(output).toContain("LOADING new/model");
+  });
+
   describe("showVersion", () => {
     it("does not render version by default", () => {
       const footer = new FooterComponent(createSession("normal"), createFooterData());

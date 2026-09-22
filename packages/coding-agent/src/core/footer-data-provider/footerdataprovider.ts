@@ -197,7 +197,7 @@ export class FooterDataProvider {
     do_setLoadingProgress(this, progress);
   }
 
-  clearProgress(options?: { preserveQueued?: boolean }): void {
+  clearProgress(options?: { preserveQueued?: boolean; preserveModelSwitch?: boolean }): void {
     do_clearProgress(this, options);
   }
 
