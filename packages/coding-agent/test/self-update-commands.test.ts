@@ -27,17 +27,58 @@ describe("source checkout self-update command", () => {
     mkdirSync(packageDir, { recursive: true });
     process.env.P_PACKAGE_DIR = packageDir;
 
-    expect(getSelfUpdateCommandForMethod("source-checkout", PACKAGE_NAME)).toEqual({
+    const expected = {
       command: "bash",
       args: ["-c", `cd ${tempDir} && git pull && npm run build`],
       display: `bash -c "cd ${tempDir} && git pull && npm run build"`,
-    });
+    };
+    expect(getSelfUpdateCommandForMethod("source-checkout", PACKAGE_NAME)).toEqual(expected);
+    // A checkout builds whatever it pulls, so it is never pinned or version-verified.
+    expect(getSelfUpdateCommandForMethod("source-checkout", PACKAGE_NAME, undefined, "1.2.4")).toEqual(expected);
   });
 
   it("offers no command when the package directory is not inside a git checkout", () => {
     process.env.P_PACKAGE_DIR = tempDir;
 
     expect(getSelfUpdateCommandForMethod("source-checkout", PACKAGE_NAME)).toBeUndefined();
+  });
+});
+
+describe("pinned self-update commands", () => {
+  it.each([
+    ["npm", ["npm"], "npm", ["install", "-g", "--ignore-scripts", "--min-release-age=0", `${PACKAGE_NAME}@1.2.4`]],
+    ["yarn", undefined, "yarn", ["global", "add", "--ignore-scripts", `${PACKAGE_NAME}@1.2.4`]],
+    [
+      "bun",
+      undefined,
+      "bun",
+      ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", `${PACKAGE_NAME}@1.2.4`],
+    ],
+  ] as const)("pins %s installs to the checked version", (method, npmCommand, command, args) => {
+    expect(
+      getSelfUpdateCommandForMethod(method, PACKAGE_NAME, npmCommand ? [...npmCommand] : undefined, "1.2.4"),
+    ).toEqual({
+      command,
+      args,
+      display: [command, ...args].join(" "),
+      pinnedVersion: "1.2.4",
+    });
+  });
+
+  it("pins pnpm installs to the checked version", () => {
+    const command = getSelfUpdateCommandForMethod("pnpm", PACKAGE_NAME, undefined, "1.2.4");
+
+    expect(command?.command).toBe("pnpm");
+    expect(command?.args.at(-1)).toBe(`${PACKAGE_NAME}@1.2.4`);
+    expect(command?.pinnedVersion).toBe("1.2.4");
+  });
+
+  it("leaves installs unpinned without a checked version", () => {
+    expect(getSelfUpdateCommandForMethod("npm", PACKAGE_NAME, ["npm"])).toEqual({
+      command: "npm",
+      args: ["install", "-g", "--ignore-scripts", "--min-release-age=0", PACKAGE_NAME],
+      display: `npm install -g --ignore-scripts --min-release-age=0 ${PACKAGE_NAME}`,
+    });
   });
 });
 

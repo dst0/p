@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync } from "fs";
+import { accessSync, constants, existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve, sep } from "path";
 import { normalizePath } from "../utils/paths.ts";
@@ -13,7 +13,7 @@ import {
 } from "./constants.ts";
 import { getGlobalPackageRoots, getPathComparisonCandidates, getSelfUpdateCommandForMethod } from "./package-roots.ts";
 import { detectInstallMethod, findGitRoot, getPackageDir } from "./self-update.ts";
-import type { InstallMethod, SelfUpdateCommand } from "./types.ts";
+import type { InstallMethod, PackageJson, SelfUpdateCommand } from "./types.ts";
 
 export function getEntrypointPackageDir(): string | undefined {
   const entrypoint = process.argv[1];
@@ -39,14 +39,11 @@ export function isSelfUpdatePathWritable(): boolean {
   }
 }
 
-export function isManagedByGlobalPackageManager(
-  method: InstallMethod,
-  packageName: string,
-  npmCommand?: string[],
-): boolean {
+/** Global package roots of `method` that contain the running installation. */
+function getManagingGlobalPackageRoots(method: InstallMethod, packageName: string, npmCommand?: string[]): string[] {
   const packageDirs = [getPackageDir(), getEntrypointPackageDir()].filter((dir): dir is string => !!dir);
   const packageDirCandidates = packageDirs.flatMap((dir) => getPathComparisonCandidates(dir));
-  return getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
+  return getGlobalPackageRoots(method, packageName, npmCommand).filter((root) => {
     return getPathComparisonCandidates(root).some((normalizedRoot) => {
       const rootPrefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`;
       return packageDirCandidates.some((packageDir) => packageDir.startsWith(rootPrefix));
@@ -54,9 +51,41 @@ export function isManagedByGlobalPackageManager(
   });
 }
 
-export function getSelfUpdateCommand(packageName: string, npmCommand?: string[]): SelfUpdateCommand | undefined {
+export function isManagedByGlobalPackageManager(
+  method: InstallMethod,
+  packageName: string,
+  npmCommand?: string[],
+): boolean {
+  return getManagingGlobalPackageRoots(method, packageName, npmCommand).length > 0;
+}
+
+/** Version installed in the global root that manages this installation, or undefined when it cannot be read. */
+export function readInstalledPackageVersion(
+  method: InstallMethod,
+  packageName: string,
+  npmCommand?: string[],
+): string | undefined {
+  try {
+    for (const root of getManagingGlobalPackageRoots(method, packageName, npmCommand)) {
+      const packageJsonPath = join(root, packageName, "package.json");
+      if (existsSync(packageJsonPath)) {
+        const version: unknown = (JSON.parse(readFileSync(packageJsonPath, "utf-8")) as PackageJson | null)?.version;
+        return typeof version === "string" && version.trim() ? version.trim() : undefined;
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+export function getSelfUpdateCommand(
+  packageName: string,
+  npmCommand?: string[],
+  version?: string,
+): SelfUpdateCommand | undefined {
   const method = detectInstallMethod();
-  const command = getSelfUpdateCommandForMethod(method, packageName, npmCommand);
+  const command = getSelfUpdateCommandForMethod(method, packageName, npmCommand, version);
   if (!command) {
     return undefined;
   }

@@ -202,6 +202,16 @@ describe("release notes", () => {
     expect(release?.note).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
   });
 
+  it("strips bidirectional overrides and zero-width characters from release notes", async () => {
+    const hidden = "\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069";
+    stubFetch(publishedVersion("1.2.4", () => Response.json({ body: `- Run \u202eexe.txt\u202c${hidden} now` })));
+
+    const release = await checkForNewPiVersion("1.2.3");
+
+    expect(release).toEqual({ version: "1.2.4", note: "- Run exe.txt now" });
+    expect(release?.note).not.toMatch(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/);
+  });
+
   it.each([
     ["the release does not exist", () => new Response("Not Found", { status: 404 })],
     ["the body is blank", () => Response.json({ body: "   " })],

@@ -237,7 +237,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 Use `/export [file]` to write a session to HTML.
 
-Use `/share` to upload a private GitHub gist with a shareable HTML link.
+Use `/share` to upload a private GitHub gist with a shareable HTML link. The default viewer link points to `https://p-agent.pages.dev/session/`, which does not serve a session viewer yet; the command also prints the gist URL, and `P_SHARE_VIEWER_URL` can point the link at a viewer you host.
 
 If you use p for open source work and want to publish sessions for model, prompt, tool, and evaluation research, share them publicly on Hugging Face or similar platforms.
 

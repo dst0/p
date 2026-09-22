@@ -59,9 +59,10 @@ async function getPiReleaseNote(version: string): Promise<string | undefined> {
     if (!response.ok) return undefined;
     const body = ((await response.json()) as { body?: unknown } | null)?.body;
     if (typeof body !== "string") return undefined;
-    // Notes are rendered in the terminal: drop escape sequences and other control characters.
+    // Notes are rendered in the terminal: drop escape sequences, other control characters, and invisible
+    // zero-width or bidirectional-override characters that could disguise the displayed text.
     const note = stripAnsi(body.replace(/\r\n?/g, "\n"))
-      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "")
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "")
       .trim();
     return note || undefined;
   } catch {

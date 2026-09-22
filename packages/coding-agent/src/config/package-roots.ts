@@ -10,12 +10,18 @@ import {
 } from "./self-update.ts";
 import type { InstallMethod, SelfUpdateCommand } from "./types.ts";
 
-/** Builds the in-place reinstall command for `packageName`; self-update never switches to another package. */
+/**
+ * Builds the in-place reinstall command for `packageName`; self-update never switches to another package.
+ * `version` must already be validated semver (it comes from the registry check); it pins package-manager
+ * installs so a lagging mirror cannot silently reinstall an older release. Source checkouts are never pinned.
+ */
 export function getSelfUpdateCommandForMethod(
   method: InstallMethod,
   packageName: string,
   npmCommand?: string[],
+  version?: string,
 ): SelfUpdateCommand | undefined {
+  const installSpec = version ? `${packageName}@${version}` : packageName;
   switch (method) {
     case "bun-binary":
       return undefined;
@@ -26,37 +32,29 @@ export function getSelfUpdateCommandForMethod(
       const binDirArgs = match
         ? [`--config.global-bin-dir=${process.env.PNPM_HOME || dirname(dirname(match[1]))}`]
         : [];
-      return makeSelfUpdateCommand("pnpm", [
-        "install",
-        "-g",
-        "--ignore-scripts",
-        "--config.minimumReleaseAge=0",
-        ...binDirArgs,
-        packageName,
-      ]);
+      return makeSelfUpdateCommand(
+        "pnpm",
+        ["install", "-g", "--ignore-scripts", "--config.minimumReleaseAge=0", ...binDirArgs, installSpec],
+        version,
+      );
     }
     case "yarn":
-      return makeSelfUpdateCommand("yarn", ["global", "add", "--ignore-scripts", packageName]);
+      return makeSelfUpdateCommand("yarn", ["global", "add", "--ignore-scripts", installSpec], version);
     case "bun":
-      return makeSelfUpdateCommand("bun", [
-        "install",
-        "-g",
-        "--ignore-scripts",
-        "--minimum-release-age=0",
-        packageName,
-      ]);
+      return makeSelfUpdateCommand(
+        "bun",
+        ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", installSpec],
+        version,
+      );
     case "npm": {
       const [command = "npm", ...npmArgs] = npmCommand ?? [];
       const inferred = npmCommand?.length ? undefined : getInferredNpmInstall();
       const prefixArgs = [...npmArgs, ...(inferred ? ["--prefix", inferred.prefix] : [])];
-      return makeSelfUpdateCommand(command, [
-        ...prefixArgs,
-        "install",
-        "-g",
-        "--ignore-scripts",
-        "--min-release-age=0",
-        packageName,
-      ]);
+      return makeSelfUpdateCommand(
+        command,
+        [...prefixArgs, "install", "-g", "--ignore-scripts", "--min-release-age=0", installSpec],
+        version,
+      );
     }
     case "source-checkout": {
       const packageDir = getPackageDir();

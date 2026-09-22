@@ -5,11 +5,12 @@ import { normalizePath } from "../utils/paths.ts";
 import { __dirname, isBunBinary, isBunRuntime } from "./constants.ts";
 import type { InstallMethod, SelfUpdateCommand } from "./types.ts";
 
-export function makeSelfUpdateCommand(command: string, args: string[]): SelfUpdateCommand {
+export function makeSelfUpdateCommand(command: string, args: string[], pinnedVersion?: string): SelfUpdateCommand {
   return {
     command,
     args,
     display: [command, ...args].map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" "),
+    ...(pinnedVersion ? { pinnedVersion } : {}),
   };
 }
 

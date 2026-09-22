@@ -11,6 +11,7 @@ import {
   printSelfUpdateNote,
   printSelfUpdateUnavailable,
   reportProjectTrustWarnings,
+  reportSelfUpdateResult,
   runSelfUpdate,
   updateTargetIncludesExtensions,
   updateTargetIncludesSelf,
@@ -171,7 +172,7 @@ export async function handlePackageCommand(
             process.exitCode = 1;
             return true;
           }
-          const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand);
+          const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand, selfUpdatePlan.version);
           if (!selfUpdateCommand) {
             printSelfUpdateUnavailable(selfUpdateNpmCommand);
             process.exitCode = 1;
@@ -192,7 +193,10 @@ export async function handlePackageCommand(
             process.exitCode = 1;
             return true;
           }
-          console.log(chalk.green(`Updated ${APP_NAME}`));
+          if (!reportSelfUpdateResult(selfUpdateCommand, installMethod, selfUpdateNpmCommand)) {
+            printSelfUpdateFallback(selfUpdateCommand);
+            process.exitCode = 1;
+          }
         }
         return true;
       }

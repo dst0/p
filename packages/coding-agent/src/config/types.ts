@@ -4,6 +4,8 @@ export interface SelfUpdateCommand {
   command: string;
   args: string[];
   display: string;
+  /** Semver the command installs; set only when the update check produced a validated version. */
+  pinnedVersion?: string;
 }
 
 export interface PackageJson {

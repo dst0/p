@@ -4,7 +4,9 @@ import {
   APP_NAME,
   getPackageDir,
   getSelfUpdateUnavailableInstruction,
+  type InstallMethod,
   PACKAGE_NAME,
+  readInstalledPackageVersion,
   type SelfUpdateCommand,
   VERSION,
 } from "../config.ts";
@@ -69,8 +71,12 @@ export async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan>
 
   try {
     const latestRelease = await getLatestPiRelease(VERSION);
-    if (!latestRelease || isNewerPackageVersion(latestRelease.version, VERSION)) {
-      return { shouldRun: true, ...(latestRelease?.note ? { note: latestRelease.note } : {}) };
+    if (!latestRelease) {
+      return { shouldRun: true };
+    }
+    if (isNewerPackageVersion(latestRelease.version, VERSION)) {
+      const { version, note } = latestRelease;
+      return { shouldRun: true, version, ...(note ? { note } : {}) };
     }
   } catch {
     return { shouldRun: true };
@@ -99,6 +105,30 @@ export async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
       }
     });
   });
+}
+
+/**
+ * Prints the outcome of a finished self-update. Returns false when a pinned install left a different version in
+ * place (for example a lagging registry mirror); unpinned installs and unreadable versions are reported as updated.
+ */
+export function reportSelfUpdateResult(
+  command: SelfUpdateCommand,
+  method: InstallMethod,
+  npmCommand: string[] | undefined,
+): boolean {
+  const installedVersion = command.pinnedVersion
+    ? readInstalledPackageVersion(method, PACKAGE_NAME, npmCommand)
+    : undefined;
+  if (installedVersion && installedVersion !== command.pinnedVersion) {
+    console.error(
+      chalk.red(
+        `Error: expected ${APP_NAME} v${command.pinnedVersion} after updating, but v${installedVersion} is installed.`,
+      ),
+    );
+    return false;
+  }
+  console.log(chalk.green(`Updated ${APP_NAME}${installedVersion ? ` to v${installedVersion}` : ""}`));
+  return true;
 }
 
 export function prepareWindowsNpmSelfUpdate(): void {
