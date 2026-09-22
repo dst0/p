@@ -12,9 +12,11 @@ vi.mock("../src/config.ts", async (importOriginal) => {
 });
 
 import { shouldRunFirstTimeSetup } from "../src/cli/startup-ui.ts";
+import { ENV_AGENT_DIR } from "../src/config.ts";
 
 describe("shouldRunFirstTimeSetup in forked distributions", () => {
   const originalPiExperimental = process.env.PI_EXPERIMENTAL;
+  const originalAgentDir = process.env[ENV_AGENT_DIR];
   let tempDir: string;
   let settingsPath: string;
 
@@ -22,6 +24,8 @@ describe("shouldRunFirstTimeSetup in forked distributions", () => {
     tempDir = mkdtempSync(join(tmpdir(), "pi-first-time-setup-fork-"));
     settingsPath = join(tempDir, "settings.json");
     process.env.PI_EXPERIMENTAL = "1";
+    // A custom agent dir also disables first-time setup; clear it so only the fork check can return false.
+    delete process.env[ENV_AGENT_DIR];
   });
 
   afterEach(() => {
@@ -30,6 +34,11 @@ describe("shouldRunFirstTimeSetup in forked distributions", () => {
       delete process.env.PI_EXPERIMENTAL;
     } else {
       process.env.PI_EXPERIMENTAL = originalPiExperimental;
+    }
+    if (originalAgentDir === undefined) {
+      delete process.env[ENV_AGENT_DIR];
+    } else {
+      process.env[ENV_AGENT_DIR] = originalAgentDir;
     }
   });
 
