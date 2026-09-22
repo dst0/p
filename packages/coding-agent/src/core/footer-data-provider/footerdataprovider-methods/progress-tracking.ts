@@ -114,8 +114,6 @@ export function do_setQueuedProgress(self: FooterDataProvider, progress: QueuedP
     self.prefillProgress = undefined;
     self.genProgress = undefined;
     self.sendingProgress = undefined;
-    self.modelSwitchProgress = undefined;
-    self.loadingProgress = undefined;
   }
   self.notifyProgressChange();
 }
@@ -137,7 +135,6 @@ export function do_setModelSwitchProgress(self: FooterDataProvider, progress: Mo
   if (progress) {
     self.prefillProgress = undefined;
     self.genProgress = undefined;
-    self.queuedProgress = undefined;
     self.sendingProgress = undefined;
   }
   self.notifyProgressChange();
@@ -148,17 +145,21 @@ export function do_setLoadingProgress(self: FooterDataProvider, progress: Loadin
   if (progress) {
     self.prefillProgress = undefined;
     self.genProgress = undefined;
-    self.queuedProgress = undefined;
     self.sendingProgress = undefined;
   }
   self.notifyProgressChange();
 }
 
-export function do_clearProgress(self: FooterDataProvider, options?: { preserveQueued?: boolean }): void {
+export function do_clearProgress(
+  self: FooterDataProvider,
+  options?: { preserveQueued?: boolean; preserveModelSwitch?: boolean },
+): void {
   self.prefillProgress = undefined;
   self.genProgress = undefined;
   self.sendingProgress = undefined;
-  self.modelSwitchProgress = undefined;
+  if (!options?.preserveModelSwitch) {
+    self.modelSwitchProgress = undefined;
+  }
   self.loadingProgress = undefined;
   if (!options?.preserveQueued) {
     self.queuedProgress = undefined;

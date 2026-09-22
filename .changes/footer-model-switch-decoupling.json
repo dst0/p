@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "coding-agent"
+  ],
+  "type": "Changed",
+  "summary": "Show orchestrator queue, model-switch, and loading progress together in the footer, and keep them visible in narrow terminals."
+}
