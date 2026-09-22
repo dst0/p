@@ -761,6 +761,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `compaction_end` | Compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
+| `project_instructions_fallback` | Compiled project instructions are unavailable; legacy instructions are in use |
 | `extension_error` | Extension threw an error |
 
 ### agent_start
@@ -966,6 +967,17 @@ On final failure (max retries exceeded):
   "success": false,
   "attempt": 3,
   "finalError": "529 overloaded_error: Overloaded"
+}
+```
+
+### project_instructions_fallback
+
+Emitted once per entry into compiler fallback (and again after a `/reload` that still cannot compile), when a new prompt starts while compiled project instructions are unavailable. The session serves legacy AGENTS.md/CLAUDE.md instructions and does not block tools; see [Compiler fallback](project-instructions.md#compiler-fallback). The message is a single display line and is never sent to the model.
+
+```json
+{
+  "type": "project_instructions_fallback",
+  "message": "Compiled project rules unavailable (project instruction compiler provider call failed); using legacy AGENTS.md/CLAUDE.md instructions until a /reload compiles them."
 }
 ```
 

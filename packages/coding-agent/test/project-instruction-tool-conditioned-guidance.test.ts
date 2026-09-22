@@ -31,14 +31,12 @@ describe("tool-conditioned project-instruction guidance", () => {
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
-      projectInstructionCompiler: async () => {
-        throw new Error("compiler unavailable");
-      },
+      projectInstructionCompiler: workspace.compiler,
       tools: ["read", "read_rules", "read_skills"],
     });
     try {
       const prepared = session._projectInstructions.state.current;
-      expect(prepared?.manifest.mode).toBe("fallback");
+      expect(prepared?.manifest.mode).toBe("compiled");
       if (!prepared) throw new Error("Expected prepared project instructions");
       const fallbackPath = getProjectInstructionFallbackPath(prepared.cacheDir, prepared.manifest.inputHash);
 

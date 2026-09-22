@@ -22,6 +22,7 @@ import { persistSubagentDigest, type SubagentDigest, type SubagentName } from ".
 import { createTokenBreakdown, type TokenBreakdown } from "../../token-accounting.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { estimateToolResultTokens } from "../message-utils.ts";
+import { resolvePromptProjectInstructionDelivery } from "../project-instruction-fallback-delivery.ts";
 import { filterProjectInstructionHistory } from "../project-instruction-integrity.ts";
 import type { PromptContextPreparation } from "../state-types.ts";
 
@@ -31,7 +32,7 @@ export function do__preparePromptContext(
   systemPrompt = self.systemPrompt,
   options: { recordWorkingState?: boolean } = {},
 ): PromptContextPreparation {
-  const compatibleMessages = filterProjectInstructionHistory(messages, self._projectInstructionMode);
+  const compatibleMessages = filterProjectInstructionHistory(messages, resolvePromptProjectInstructionDelivery(self));
   const settings = self._getEffectiveCompactionSettings();
   const latestCompactionTimestamp = self._getLatestCompactionTimestamp();
   if (!settings.enabled) {

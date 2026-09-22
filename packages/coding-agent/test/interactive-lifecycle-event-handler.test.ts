@@ -40,6 +40,7 @@ function createMode() {
     session: { abortCompaction: vi.fn(), abortRetry: vi.fn() },
     showError: vi.fn(),
     showStatus: vi.fn(),
+    showWarning: vi.fn(),
     rebuildChatFromMessages: vi.fn(),
     flushCompactionQueue: vi.fn(async () => undefined),
     showRetryProgressInFooter: vi.fn(),
@@ -97,6 +98,18 @@ describe("interactive lifecycle event handler", () => {
     expect(mode.ui.terminal.setProgress).toHaveBeenLastCalledWith(false);
 
     await expect(handle(mode, { type: "unknown" })).resolves.toBe(false);
+  });
+
+  it("shows the project-instruction fallback notice as a warning without blocking input", async () => {
+    const { mode, oldEscape } = createMode();
+    const message = "Compiled project rules unavailable; using legacy AGENTS.md/CLAUDE.md instructions.";
+
+    await expect(handle(mode, { type: "project_instructions_fallback", message })).resolves.toBe(true);
+
+    expect(mode.showWarning).toHaveBeenCalledExactlyOnceWith(message);
+    expect(mode.showError).not.toHaveBeenCalled();
+    expect(mode.statusContainer.addChild).not.toHaveBeenCalled();
+    expect(mode.defaultEditor.onEscape).toBe(oldEscape);
   });
 
   it("handles compaction progress, cancellation, success, and errors", async () => {

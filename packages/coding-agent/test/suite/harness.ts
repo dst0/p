@@ -14,6 +14,7 @@ import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { ModelRegistry } from "../../src/core/model-registry.ts";
+import type { ProjectInstructionController } from "../../src/core/project-instructions/index.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
@@ -75,6 +76,8 @@ export interface HarnessOptions {
   withConfiguredAuth?: boolean;
   completionMode?: CompletionMode;
   taskVerificationMode?: TaskVerificationMode;
+  /** Prepared compiled-delivery controller, e.g. from createSessionProjectInstructionController. */
+  projectInstructions?: ProjectInstructionController;
 }
 
 export interface Harness {
@@ -248,6 +251,7 @@ async function buildHarness(
     cwd: tempDir,
     modelRegistry,
     resourceLoader,
+    projectInstructions: options.projectInstructions,
     customTools: taskVerificationRuntime?.customTools,
     baseToolsOverride: toolMap,
     initialActiveToolNames: options.initialActiveToolNames,

@@ -139,10 +139,12 @@ export function restoreProjectRuleGateFromHistory(
     : undefined;
 }
 
+type ProjectRuleSupersessionSource = "reload" | "model-refresh" | "delivery-change";
+
 export function persistProjectRuleSupersession(
   sessionManager: SessionManager,
   inputHash: string,
-  source: "reload" | "model-refresh",
+  source: ProjectRuleSupersessionSource,
 ): void {
   sessionManager.appendCustomEntry(PROJECT_RULE_SUPERSESSION_CUSTOM_TYPE, {
     version: 1,
@@ -178,12 +180,12 @@ function deserializeProjectRuleReceipt(data: unknown): { inputHash: string; link
 
 function deserializeProjectRuleSupersession(
   data: unknown,
-): { inputHash: string; source: "reload" | "model-refresh" } | undefined {
+): { inputHash: string; source: ProjectRuleSupersessionSource } | undefined {
   if (
     !isRecord(data) ||
     data.version !== 1 ||
     typeof data.inputHash !== "string" ||
-    (data.source !== "reload" && data.source !== "model-refresh")
+    (data.source !== "reload" && data.source !== "model-refresh" && data.source !== "delivery-change")
   ) {
     return undefined;
   }

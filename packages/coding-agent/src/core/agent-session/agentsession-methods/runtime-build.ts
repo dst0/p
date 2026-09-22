@@ -195,6 +195,8 @@ export async function do_reload(self: AgentSession): Promise<void> {
   self._projectRuleReadStages.clear();
   self._queuedProjectRuleGates = new WeakMap();
   self._processingQueuedProjectRuleTurn = false;
+  // An explicit reload that still cannot compile announces the legacy fallback again on the next turn.
+  self._projectInstructionFallbackAnnounced = false;
 }
 
 export function do__isNonRetryableProviderLimitError(_self: AgentSession, errorMessage: string): boolean {

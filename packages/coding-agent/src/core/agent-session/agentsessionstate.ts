@@ -68,6 +68,9 @@ export class AgentSessionState {
   public _resourceLoader: ResourceLoader;
   public _projectInstructions: ProjectInstructionController;
   public _projectInstructionMode: ProjectInstructionDeliveryMode;
+  /** Whether the base system prompt was built with legacy fallback delivery for a compiled-mode session. */
+  public _projectInstructionFallbackPromptActive = false;
+  public _projectInstructionFallbackAnnounced = false;
   public _projectRuleGate: ProjectRuleGate | undefined;
   public _projectRuleGateGeneration = 0;
   public _projectRuleReadStages = new Map<string, ProjectRuleReadStage>();

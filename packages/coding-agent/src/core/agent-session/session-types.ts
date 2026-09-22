@@ -67,6 +67,7 @@ export type AgentSessionEvent =
   | { type: "session_info_changed"; name: string | undefined }
   | { type: "thinking_level_changed"; level: ThinkingLevel }
   | { type: "interaction_mode_changed"; mode: InteractionMode }
+  | { type: "project_instructions_fallback"; message: string }
   | {
       type: "compaction_end";
       reason: "manual" | "threshold" | "overflow";
