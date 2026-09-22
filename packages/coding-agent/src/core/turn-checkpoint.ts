@@ -30,9 +30,10 @@ export function createTurnCheckpointMessages(
   context: PrepareNextTurnContext,
   state: StructuredSessionState,
   renderedStateMaxTokens: number,
+  options: { errorsOnly?: boolean } = {},
 ): CustomMessage[] {
   const durableResults = context.toolResults.filter((result) => result.toolName !== SLEEP_TOOL_NAME);
-  if (durableResults.length === 0) {
+  if (durableResults.length === 0 || (options.errorsOnly && !durableResults.some((result) => result.isError))) {
     return [];
   }
 

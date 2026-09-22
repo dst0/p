@@ -14,6 +14,7 @@ import {
 } from "../tool-classification.ts";
 import { evidenceMutationChecklistGate } from "./completion-checklist.ts";
 import { snapshotNativeToolCallContext } from "./native-tool-result-context.ts";
+import { observedInLightTier, observeOnlyBeforeToolCall } from "./observe-only-gate.ts";
 import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
@@ -37,6 +38,10 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
   const previousBeforeToolCall = agent.beforeToolCall;
   const previousAfterToolCall = agent.afterToolCall;
   agent.beforeToolCall = async (context, signal) => {
+    if (self.observeOnly && !observedInLightTier(context)) {
+      self.unobservedCalls.add(context.toolCall.id);
+      return await previousBeforeToolCall?.(context, signal);
+    }
     if (!self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
       reserveTestMutation(self, context);
     }
@@ -52,7 +57,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       return previousResult;
     }
     releaseTestMutationReservation(self, context.toolCall.id);
-    const verificationGate = self.beforeToolCall(context);
+    const verificationGate = self.observeOnly ? observeOnlyBeforeToolCall(self, context) : self.beforeToolCall(context);
     if (verificationGate?.block) {
       releaseTestMutationReservation(self, context.toolCall.id);
       return verificationGate;
@@ -113,6 +118,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     return previousResult;
   };
   agent.afterToolCall = async (context, signal) => {
+    if (self.unobservedCalls.delete(context.toolCall.id)) return await previousAfterToolCall?.(context, signal);
     const nativeContext = snapshotNativeToolCallContext(context);
     let previousFailed = false;
     let previousError: unknown;
@@ -127,7 +133,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     try {
       const result = await self.afterToolCall(nativeContext, previousResult);
       if (previousFailed) throw previousError;
-      return result;
+      return self.observeOnly ? previousResult : result;
     } catch (controllerError) {
       if (previousFailed && controllerError !== previousError) {
         if (previousError instanceof Error && previousError.cause === undefined) previousError.cause = controllerError;
@@ -146,6 +152,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       self.workspaceSourceSnapshots.clear();
       self.activeMutationAttempts.clear();
       self.bashFingerprints.clear();
+      self.unobservedCalls.clear();
       self.modelTurn += 1;
       return;
     }

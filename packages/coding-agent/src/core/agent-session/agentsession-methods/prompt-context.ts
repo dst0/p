@@ -10,6 +10,7 @@ import { createRulesContext } from "../../project-rules.ts";
 import { createRepoMapContext } from "../../repo-map.ts";
 import type { SessionEntry } from "../../session-manager.ts";
 import { createSubagentDigestContext, createSubagentProfilesPrompt } from "../../subagents.ts";
+import { isLightTierActive } from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
 import {
   RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE,
@@ -112,12 +113,14 @@ export function do__createRuntimeContextPrompts(
     sessionId: self.sessionManager.getSessionId(),
     validEntryIds: branchEntryIds,
   });
-  const subagentProfilesPrompt = createSubagentProfilesPrompt();
+  // LIGHT verification omits the state protocol and subagent catalog from the system prompt.
+  const lightTier = isLightTierActive(self);
+  const subagentProfilesPrompt = lightTier ? undefined : createSubagentProfilesPrompt();
+  const stateProtocolPrompt = lightTier ? undefined : SESSION_STATE_PROTOCOL_PROMPT;
   const temporalContextPrompt = formatTemporalContext();
-  // NOTE: volatile per-turn context is NOT included in the system prompt.
-  // It is persisted as hidden custom messages next to the user message that
-  // selected it, so later turns replay the exact same prefix for KV cache reuse.
-  const prompts = [SESSION_STATE_PROTOCOL_PROMPT, subagentProfilesPrompt].filter(
+  // NOTE: volatile per-turn context is NOT included in the system prompt. It is persisted as hidden custom messages
+  // next to the user message that selected it, so later turns replay the exact same prefix for KV cache reuse.
+  const prompts = [stateProtocolPrompt, subagentProfilesPrompt].filter(
     (prompt): prompt is string => prompt !== undefined && prompt.length > 0,
   );
   const turnContextPrompts = [
@@ -129,7 +132,7 @@ export function do__createRuntimeContextPrompts(
   ].filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0);
   return {
     baseSystemPrompt,
-    stateProtocolPrompt: SESSION_STATE_PROTOCOL_PROMPT,
+    stateProtocolPrompt,
     workingStatePrompt,
     memoryPrompt,
     rulesPrompt,

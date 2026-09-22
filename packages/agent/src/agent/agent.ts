@@ -114,6 +114,8 @@ export class Agent {
 
   public completionLimits?: CompletionProtocolLimits;
 
+  public allowImplicitCompletion?: AgentLoopConfig["allowImplicitCompletion"];
+
   constructor(options: AgentOptions = {}) {
     this._state = createMutableAgentState(options.initialState);
     this.convertToLlm = options.convertToLlm ?? defaultConvertToLlm;
@@ -137,6 +139,7 @@ export class Agent {
     this.toolExecution = options.toolExecution ?? "parallel";
     this.completionMode = options.completionMode ?? "explicit_finish";
     this.completionLimits = options.completionLimits;
+    this.allowImplicitCompletion = options.allowImplicitCompletion;
   }
 
   get state(): AgentState {

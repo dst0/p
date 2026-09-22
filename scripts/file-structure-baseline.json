@@ -29,7 +29,7 @@
   },
   "packages/agent/src/types.ts": {
     "classes": 0,
-    "lines": 508
+    "lines": 488
   },
   "packages/agent/test/agent-loop.test.ts": {
     "classes": 1,

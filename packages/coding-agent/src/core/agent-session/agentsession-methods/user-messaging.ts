@@ -3,6 +3,7 @@ import type { ImageContent, TextContent } from "@dst0/p-ai";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "../../auth-guidance.ts";
 import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { expandPromptTemplate } from "../../prompt-templates.ts";
+import { beginVerificationTierPrompt } from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { preserveCompiledProjectInstructionPrompt } from "../project-instruction-integrity.ts";
 import type { PromptOptions } from "../session-types.ts";
@@ -86,6 +87,9 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
       }
       throw new Error(formatNoApiKeyFoundMessage(self.model.provider));
     }
+
+    // Recompute the verification tier before the tool set and system prompt are captured.
+    beginVerificationTierPrompt(self, expandedText);
 
     // Build messages array (custom message if any, then user message)
     messages = [];

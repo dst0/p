@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModel } from "@dst0/p-ai";
@@ -29,6 +29,7 @@ describe("task verification custom tool effects", () => {
     cwd = join(tmpdir(), `p-tool-effects-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     agentDir = join(cwd, "agent");
     mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ taskVerification: { mode: "strict" } }));
   });
 
   afterEach(() => {
@@ -291,10 +292,9 @@ describe("task verification custom tool effects", () => {
         settingsManager: SettingsManager.create(cwd, agentDir),
         projectInstructionMode: "off",
         completionMode: "implicit",
-        taskVerificationMode: "evidence",
         noTools: "builtin",
         customTools: [customTool("lookup_ticket", { kind: "read", risk: "normal" })],
       }),
-    ).rejects.toThrow('Task verification mode "evidence" requires explicit_finish completion mode');
+    ).rejects.toThrow('Task verification policy "strict" requires explicit_finish completion mode');
   });
 });

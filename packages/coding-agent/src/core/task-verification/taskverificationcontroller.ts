@@ -106,6 +106,12 @@ export class TaskVerificationController {
   public modelTurn = 0;
   public lastAuditTransitionTurn = -1;
   public restoreError?: string;
+  /** LIGHT tier: record the effect ledger and evidence without gating or rewriting tool results. */
+  public observeOnly = false;
+  /** Calls whose pre-hook bypassed the controller; their post-hook must bypass it too, even after escalation. */
+  public readonly unobservedCalls = new Set<string>();
+  /** Auto policy: zero-effect completion needs no checklist or task declaration. */
+  public relaxedZeroEffectCompletion = false;
 
   constructor(sessionManager: SessionManager, mode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE) {
     this.mode = mode;

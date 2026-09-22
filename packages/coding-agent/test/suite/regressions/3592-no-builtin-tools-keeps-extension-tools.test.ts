@@ -81,6 +81,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
     ).toEqual([
       "ask_user",
       "bash",
+      "begin_code_task",
       "confirm_user",
       "dynamic_tool",
       "edit",
@@ -109,7 +110,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "update_session_state",
       "write",
     ]);
-    expect(session.getActiveToolNames()).toEqual(["dynamic_tool", "read_rules", "record_task_verification"]);
+    // The default auto policy starts LIGHT: the escalation signal replaces the STRICT verification tool.
+    expect(session.getActiveToolNames()).toEqual(["dynamic_tool", "read_rules", "begin_code_task"]);
     const activeRuleReader = session.agent.state.tools.find((tool) => tool.name === "read_rules");
     expect(activeRuleReader).toBeDefined();
     expect(activeRuleReader?.execute).toBeTypeOf("function");

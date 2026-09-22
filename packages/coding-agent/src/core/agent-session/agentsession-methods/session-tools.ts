@@ -1,3 +1,4 @@
+import { FINISH_WORK_TOOL_NAME } from "@dst0/p-agent-core";
 import {
   createInitialStructuredSessionState,
   findMatchingPlanItem,
@@ -7,6 +8,7 @@ import {
   type StatePatch,
 } from "../../compaction/index.ts";
 import type { ToolDefinition } from "../../extensions/index.ts";
+import { LIGHT_DEFERRED_TOOL_NAMES } from "../../task-verification/task-tier.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { SESSION_RECALL_SCHEMA, TOOL_SEARCH_SCHEMA, TOOL_SEARCH_TOOL_NAME } from "../constants.ts";
 import { capStateToolText } from "../message-utils.ts";
@@ -84,6 +86,17 @@ export function do__createSessionRecallToolDefinition(
   };
 }
 
+/** Verification control tools are managed by the tier and completion protocol, never by tool_search. */
+function isCompletionControlTool(self: AgentSession, name: string): boolean {
+  return name === FINISH_WORK_TOOL_NAME || self._taskVerificationRuntime?.managedToolNames.has(name) === true;
+}
+
+/** Extension tools and LIGHT-deferred builtins are searchable. */
+function isSearchableTool(self: AgentSession, name: string, source: string): boolean {
+  if (isCompletionControlTool(self, name)) return false;
+  return source !== "builtin" || LIGHT_DEFERRED_TOOL_NAMES.includes(name);
+}
+
 export function do__createToolSearchToolDefinition(
   self: AgentSession,
 ): ToolDefinition<typeof TOOL_SEARCH_SCHEMA, ToolSearchResult> {
@@ -106,7 +119,9 @@ export function do__createToolSearchToolDefinition(
       const activeNames = new Set(self.getActiveToolNames());
       const alreadyActive = requestedNames.filter((name) => activeNames.has(name));
       const unknownNames = requestedNames.filter((name) => !self._toolDefinitions.has(name));
-      const exactMatches = requestedNames.filter((name) => self._toolDefinitions.has(name) && !activeNames.has(name));
+      const exactMatches = requestedNames.filter(
+        (name) => self._toolDefinitions.has(name) && !activeNames.has(name) && !isCompletionControlTool(self, name),
+      );
       const limit = Math.min(8, Math.max(1, params.limit ?? 5));
       const terms = query
         ?.toLowerCase()
@@ -115,7 +130,7 @@ export function do__createToolSearchToolDefinition(
       const compactQuery = terms?.join("") ?? "";
       const rankedMatches = query
         ? Array.from(self._toolDefinitions.entries())
-            .filter(([name, entry]) => !activeNames.has(name) && entry.sourceInfo.source !== "builtin")
+            .filter(([name, entry]) => !activeNames.has(name) && isSearchableTool(self, name, entry.sourceInfo.source))
             .map(([name, entry]) => {
               const normalizedName = name.toLowerCase();
               const normalizedLabel = entry.definition.label.toLowerCase();

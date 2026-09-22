@@ -18,6 +18,7 @@ export function do_createLoopConfig(self: Agent, options: { skipInitialSteeringP
     toolExecution: self.toolExecution,
     completionMode: self.completionMode,
     completionLimits: self.completionLimits,
+    allowImplicitCompletion: self.allowImplicitCompletion,
     beforeToolCall: self.beforeToolCall,
     afterToolCall: self.afterToolCall,
     prepareNextTurn: self.prepareNextTurn

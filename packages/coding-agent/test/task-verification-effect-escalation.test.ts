@@ -32,6 +32,13 @@ describe("verification effect escalation", () => {
     ["poem", "other"],
     ["node_modules/x/index.js", "other"],
     ["dist/a.js", "other"],
+    ["packages/x/dist/a.js", "other"],
+    ["build/static/main.js", "other"],
+    ["out/index.js", "other"],
+    ["vendor/lib.go", "other"],
+    ["src/build/index.ts", "source"],
+    ["tools/vendor/patch.py", "source"],
+    ["build.ts", "source"],
   ] as const)("classifies %s as %s", (path, expected) => {
     expect(classifyEffectPath(path)).toBe(expected);
   });

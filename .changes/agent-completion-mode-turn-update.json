@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Added",
+  "summary": "Add `AgentLoopTurnUpdate.completionMode` to switch the completion protocol within a run and `allowImplicitCompletion` to accept a non-empty text answer under explicit completion."
+}

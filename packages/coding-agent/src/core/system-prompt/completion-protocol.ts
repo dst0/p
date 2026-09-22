@@ -5,8 +5,12 @@ import { formatTaskVerificationCompletionInstruction } from "./task-verification
 export function formatCompletionProtocolInstructions(
   mode: CompletionMode | undefined,
   taskVerificationMode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE,
+  zeroEffectTextCompletion = false,
 ): string {
-  const taskVerificationInstruction = formatTaskVerificationCompletionInstruction(taskVerificationMode);
+  const taskVerificationInstruction = formatTaskVerificationCompletionInstruction(
+    taskVerificationMode,
+    zeroEffectTextCompletion,
+  );
   const sessionStateInstructions = [
     `Before calling \`${FINISH_WORK_TOOL_NAME}\`, reconcile the visible working state.`,
     "Examine the <working_state> block to check current plan items and their statuses.",
@@ -24,7 +28,9 @@ export function formatCompletionProtocolInstructions(
   if (mode === "explicit_finish") {
     return [
       "You are operating in explicit completion mode.",
-      `You must not end the task with a normal assistant message. When the task is complete, call \`${FINISH_WORK_TOOL_NAME}\`.`,
+      zeroEffectTextCompletion
+        ? `If the request needs no file, command, or external change, answer in plain text. Once you change anything, do not end with a normal assistant message: call \`${FINISH_WORK_TOOL_NAME}\` when the task is complete.`
+        : `You must not end the task with a normal assistant message. When the task is complete, call \`${FINISH_WORK_TOOL_NAME}\`.`,
       "If more work is needed, call tools.",
       `If you encounter an unrecoverable problem, call \`${FINISH_WORK_TOOL_NAME}\` with status \`failed\` or \`partial\` and explain the remaining issue.`,
       sessionStateInstructions,

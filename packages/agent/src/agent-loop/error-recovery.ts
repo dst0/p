@@ -7,6 +7,7 @@ import {
   isEmptyAssistantMessage,
   resetCompletionProgress,
 } from "./context-management.ts";
+import { acceptsImplicitCompletion, resolveTurnCompletionMode } from "./implicit-completion.ts";
 import {
   createCompletionProtocolState,
   emitAbortedTurn,
@@ -22,6 +23,7 @@ import { isProviderLengthResponse, requiresSpecializedProviderLengthRepair } fro
 import { streamAssistantResponse } from "./response-processing.ts";
 import { detectCompletionProtocolRepair } from "./tool-result-formatting.ts";
 import type { AgentEventSink, ExecutedToolCallBatch } from "./types.ts";
+import { recordWaitingTurn } from "./waiting-loop-warning.ts";
 
 const PROVIDER_CONTINUATION_CANCELLED_DIAGNOSTIC =
   "Agent stopped because the operation was cancelled before the next provider continuation request.";
@@ -63,7 +65,7 @@ export async function runLoop(
         pendingMessages = [];
       }
 
-      completionMode = resolveCompletionMode(config);
+      completionMode = await resolveTurnCompletionMode(config, completionMode, completionState, emit);
       currentContext = withCompletionProtocolTools(currentContext, completionMode);
       const completionLimits = resolveCompletionLimits(config, completionMode);
       if (isCompletionProtocolEnabled(completionMode) && completionState.turns >= completionLimits.maxTurns) {
@@ -96,6 +98,13 @@ export async function runLoop(
         (!providerLengthResponse || requiresSpecializedProviderLengthRepair(message, toolCalls))
           ? detectCompletionProtocolRepair(message, toolCalls, true)
           : undefined;
+      const implicitTurn = acceptsImplicitCompletion(
+        config,
+        completionMode,
+        message,
+        protocolRepairBeforeExecution,
+        completionState,
+      );
 
       const toolResults: ToolResultMessage[] = [];
       let executedToolBatch: ExecutedToolCallBatch | undefined;
@@ -138,32 +147,22 @@ export async function runLoop(
         hasMoreToolCalls = true;
       }
 
-      if (executedToolBatch?.madeProgress) {
-        completionState.consecutiveWaitingTurns = 0;
-      } else if (executedToolBatch?.waiting) {
-        completionState.consecutiveWaitingTurns++;
-      }
-      if (completionState.consecutiveWaitingTurns >= completionLimits.maxConsecutiveWaitingTurns) {
-        const warningMessage = `Warning: Executed ${completionState.consecutiveWaitingTurns} consecutive wait-only turns without new evidence. Use an event-driven process wait, inspect concrete state, or interrupt the pending operation before continuing.`;
-        await emit({
-          type: "completion_protocol",
-          completionMode,
-          event: "waiting_loop_warning",
-          reason: warningMessage,
-        });
-        const repairMessage = createProtocolRepairMessage(warningMessage);
-        await emit({ type: "message_start", message: repairMessage });
-        await emit({ type: "message_end", message: repairMessage });
-        currentContext.messages.push(repairMessage);
-        newMessages.push(repairMessage);
-        completionState.consecutiveWaitingTurns = 0;
-        hasMoreToolCalls = true;
-      }
+      const waitingWarning = await recordWaitingTurn(
+        completionState,
+        executedToolBatch,
+        completionLimits,
+        completionMode,
+        currentContext,
+        newMessages,
+        emit,
+      );
+      if (waitingWarning) hasMoreToolCalls = true;
 
       if (
         providerLengthDecision === "none" &&
         isCompletionProtocolEnabled(completionMode) &&
-        !completionState.allowImplicitCompletion
+        !completionState.allowImplicitCompletion &&
+        !implicitTurn
       ) {
         const finishWorkResult = toolResults.find((result) => isFinishWorkToolResult(result) && !result.isError);
         if (finishWorkResult) {
@@ -267,7 +266,7 @@ export async function runLoop(
 
       const canStopImplicitly =
         providerLengthDecision === "none" &&
-        (!isCompletionProtocolEnabled(completionMode) || completionState.allowImplicitCompletion);
+        (!isCompletionProtocolEnabled(completionMode) || completionState.allowImplicitCompletion || implicitTurn);
       if (
         canStopImplicitly &&
         (await config.shouldStopAfterTurn?.({

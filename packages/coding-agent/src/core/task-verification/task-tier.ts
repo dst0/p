@@ -65,19 +65,19 @@ const EXTRA_CODE_EXTENSIONS = new Set([
   ".m",
   ".mm",
 ]);
+/** Never hand-written, wherever they appear. */
 const GENERATED_DIRECTORIES = new Set([
   "node_modules",
   ".git",
   "dist",
-  "build",
-  "out",
   ".next",
   "coverage",
-  "vendor",
   "target",
   "__pycache__",
   ".venv",
 ]);
+/** Generated or vendored only at the repository root; `src/build/` is ordinary source. */
+const ROOT_GENERATED_DIRECTORIES = new Set(["build", "out", "vendor"]);
 const BUILD_CONFIG_FILE_NAMES = new Set([
   "package.json",
   "package-lock.json",
@@ -139,6 +139,8 @@ export function classifyEffectPath(filePath: string): EffectPathClass {
   const segments = lower.split("/");
   const name = segments.at(-1) ?? "";
   if (segments.some((segment) => GENERATED_DIRECTORIES.has(segment))) return "other";
+  const rootEnd = lower.indexOf("/");
+  if (rootEnd > 0 && ROOT_GENERATED_DIRECTORIES.has(lower.slice(0, rootEnd))) return "other";
   if (BUILD_CONFIG_FILE_NAMES.has(name) || BUILD_CONFIG_PATH_PATTERN.test(lower)) return "config";
   const extension = extname(name);
   if (DOC_EXTENSIONS.has(extension)) return "docs";

@@ -2,7 +2,7 @@ import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import { completionVerificationScope } from "../completion-verification-scope.ts";
 import { frozenSourceOutputRestoreError } from "../critical-proof-source-output-revalidation.ts";
 import { revalidateCriticalProofSources } from "../evidence-critical-proof-observation.ts";
-import { requestedEffectIntent } from "../requested-effect-intent.ts";
+import { type RequestedEffectIntent, requestedEffectIntent } from "../requested-effect-intent.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { normalizedFilesChanged } from "../workspace-effect-state.ts";
 import { currentCompletionChecklist } from "./completion-checklist.ts";
@@ -13,6 +13,34 @@ export function zeroEffectCompletionGate(
   verificationToken: string | undefined,
   filesChanged: unknown,
 ): BeforeToolCallResult | undefined {
+  const requirementGate = self.relaxedZeroEffectCompletion
+    ? relaxedZeroEffectGate(self, action)
+    : zeroEffectRequirementGate(self, action);
+  if (requirementGate) return requirementGate;
+  if (verificationToken !== undefined) {
+    return self.blocked(`Cannot ${action}: zero-effect response-only completion has no verification_token.`);
+  }
+  const normalized = filesChanged === undefined ? [] : normalizedFilesChanged(filesChanged);
+  if (!normalized || normalized.length > 0) {
+    return self.blocked(`Cannot ${action}: files_changed must be empty when no workspace effect was recorded.`);
+  }
+  return undefined;
+}
+
+/** The requested-effect intent of every prompt in the current task. */
+export function currentRequestedEffectIntent(self: TaskVerificationController): RequestedEffectIntent {
+  return requestedEffectIntent(self.state.taskPrompts?.map((prompt) => prompt.text) ?? [self.latestUserPrompt]);
+}
+
+/** Auto policy: no checklist or declaration, but a zero-effect success still cannot claim a required effect. */
+function relaxedZeroEffectGate(self: TaskVerificationController, action: string): BeforeToolCallResult | undefined {
+  if (currentRequestedEffectIntent(self) !== "effect_required") return undefined;
+  return self.blocked(
+    `Cannot ${action}: the requested task requires at least one successful effect. Make the change, or finish with status "partial" or "failed".`,
+  );
+}
+
+function zeroEffectRequirementGate(self: TaskVerificationController, action: string): BeforeToolCallResult | undefined {
   const checklist = currentCompletionChecklist(self);
   if (typeof checklist === "string") {
     return self.blocked(
@@ -26,8 +54,7 @@ export function zeroEffectCompletionGate(
       `Cannot ${action}: ${completionVerificationScope(checklist)} completion requires at least one successful effect.`,
     );
   }
-  const promptTexts = self.state.taskPrompts?.map((prompt) => prompt.text) ?? [self.latestUserPrompt];
-  const intent = requestedEffectIntent(promptTexts);
+  const intent = currentRequestedEffectIntent(self);
   if (intent === "effect_required" || (intent === "unknown" && self.state.taskKind !== "investigation")) {
     if (intent === "unknown" && !self.state.taskKind) {
       return self.blocked(
@@ -35,13 +62,6 @@ export function zeroEffectCompletionGate(
       );
     }
     return self.blocked(`Cannot ${action}: the requested task requires at least one successful effect.`);
-  }
-  if (verificationToken !== undefined) {
-    return self.blocked(`Cannot ${action}: zero-effect response-only completion has no verification_token.`);
-  }
-  const normalized = filesChanged === undefined ? [] : normalizedFilesChanged(filesChanged);
-  if (!normalized || normalized.length > 0) {
-    return self.blocked(`Cannot ${action}: files_changed must be empty when no workspace effect was recorded.`);
   }
   return undefined;
 }

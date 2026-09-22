@@ -38,6 +38,7 @@ import * as toolRegistryDelegates from "./agentsession-methods/tool-registry.ts"
 import * as treeNavigationDelegates from "./agentsession-methods/tree-navigation.ts";
 import * as updateSessionStateDelegates from "./agentsession-methods/update-session-state.ts";
 import * as userMessagingDelegates from "./agentsession-methods/user-messaging.ts";
+import * as verificationTierDelegates from "./agentsession-methods/verification-tier.ts";
 import type { AgentSessionMethods } from "./agentsession-methods.ts";
 import { AgentSessionState } from "./agentsessionstate.ts";
 import type { AgentSessionConfig } from "./session-types.ts";
@@ -114,5 +115,6 @@ installDelegatedMethods(AgentSession.prototype, [
   treeNavigationDelegates,
   updateSessionStateDelegates,
   userMessagingDelegates,
+  verificationTierDelegates,
 ]);
 installSessionBudgetScope(AgentSession.prototype);

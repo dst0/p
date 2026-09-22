@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Stop demanding a broad test run or blocking readiness when a command's workspace snapshot fails without a detected mutation, and keep extension and MCP tools out of the LIGHT-tier effect ledger."
+}

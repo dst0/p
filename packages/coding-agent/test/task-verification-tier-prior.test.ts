@@ -20,7 +20,7 @@ describe("verification tier prior", () => {
     "Say exactly: ok",
     "Run npm test and report failures",
     "Find where finish_work is defined",
-    "src/a.ts returns 1 but it should return 2.",
+    "Look at src/a.ts.",
   ])("keeps questions and unclassified requests LIGHT: %s", (prompt) => {
     expect(promptRequiresStrictTier(prompt)).toBe(false);
     expect(initialVerificationTier("auto", prompt)).toEqual({ tier: "light", reason: "prior" });
