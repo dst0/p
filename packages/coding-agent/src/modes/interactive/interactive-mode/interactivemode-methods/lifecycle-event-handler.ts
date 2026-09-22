@@ -1,5 +1,6 @@
 import { Loader, Spacer, Text } from "@dst0/p-tui";
 import type { AgentSessionEvent } from "../../../../core/agent-session.ts";
+import { describeTierCause } from "../../../../core/task-verification-tier-runtime.ts";
 import { CountdownTimer } from "../../components/countdown-timer.ts";
 import { keyText } from "../../components/keybinding-hints.ts";
 import { theme } from "../../theme/theme.ts";
@@ -48,6 +49,15 @@ export async function handleLifecycleEvent(self: InteractiveMode, event: AgentSe
       self.updateEditorBorderColor();
       break;
     case "interaction_mode_changed":
+      self.footer.invalidate();
+      self.ui.requestRender();
+      break;
+    case "verification_tier_changed":
+      if (event.tier !== event.previousTier) {
+        self.showStatus(
+          `verification → ${event.tier.toUpperCase()} (${describeTierCause(event.reason, event.trigger)})`,
+        );
+      }
       self.footer.invalidate();
       self.ui.requestRender();
       break;

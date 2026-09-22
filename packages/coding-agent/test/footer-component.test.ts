@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { beforeAll, describe, expect, it } from "vitest";
+import type { VerificationTierStatus } from "../src/core/agent-session/agentsession-verification-methods.ts";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
 import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
@@ -22,8 +23,12 @@ function createFooterData(): ReadonlyFooterDataProvider {
   };
 }
 
-function createSession(interactionMode: "normal" | "plan"): AgentSession {
+function createSession(
+  interactionMode: "normal" | "plan",
+  verification: VerificationTierStatus | undefined = undefined,
+): AgentSession {
   return {
+    getVerificationTierStatus: () => verification,
     state: {
       model: undefined,
       thinkingLevel: "off",
@@ -56,6 +61,28 @@ describe("FooterComponent", () => {
     const footer = new FooterComponent(createSession("normal"), createFooterData());
 
     expect(footer.render(100).join("\n")).not.toContain("PLAN");
+  });
+
+  it.each([
+    [{ policy: "auto", tier: "light" }, "LIGHT"],
+    [{ policy: "auto", tier: "strict" }, "STRICT·auto"],
+    [{ policy: "strict", tier: "strict" }, "STRICT"],
+    [{ policy: "off", tier: "light" }, "OFF"],
+  ] as const)("renders the verification badge for %o as %s", (status, badge) => {
+    const footer = new FooterComponent(
+      createSession("normal", { ...status, policyOverridden: false, reason: "prior" }),
+      createFooterData(),
+    );
+
+    const rendered = footer.render(120).join("\n");
+    expect(rendered).toContain(badge);
+    if (badge === "STRICT") expect(rendered).not.toContain("STRICT·auto");
+  });
+
+  it("renders no verification badge when verification is off in settings", () => {
+    const rendered = new FooterComponent(createSession("normal"), createFooterData()).render(120).join("\n");
+
+    expect(rendered).not.toMatch(/LIGHT|STRICT|OFF/);
   });
 
   it("renders live repository indexing progress", () => {

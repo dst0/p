@@ -185,7 +185,8 @@ Model-loading and LLM-orchestrator worker-unavailable errors use an extended rec
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `completionMode` | string | `"explicit_finish"` | Completion mode: `"explicit_finish"`, `"hybrid"`, or `"implicit"` |
-| `taskVerificationMode` | string | `"evidence"` | Task verification: deterministic `"evidence"`, experimental semantic `"audit"`, or `"off"`. Global setting only |
+| `taskVerification.mode` | string | `"auto"` | Verification tier policy: `"auto"`, `"light"`, `"strict"`, or `"off"`. Global setting only |
+| `taskVerification.engine` | string | `"evidence"` | STRICT engine: deterministic `"evidence"` or experimental semantic `"audit"`. Global setting only |
 | `completionLimits.maxTurns` | number | `64` | Maximum model turns before strict/hybrid protocol failure |
 | `completionLimits.maxNoProgressTurns` | number | `5` | Maximum repair/no-progress turns before graceful failure |
 | `completionLimits.maxMalformedToolRetries` | number | `3` | Maximum malformed or truncated tool-call retries |
@@ -230,7 +231,7 @@ Strict CI/testing profile:
 
 `finish_work` is always available in `explicit_finish` and `hybrid`, and is not removed by `--tools`, `--exclude-tools`, or `--no-tools`.
 
-`evidence` and `audit` require `explicit_finish` when a mutating tool activates verification. The task-verification default is read only from global settings so a repository-local `.p/settings.json` cannot silently weaken or replace it. The explicit `--task-verification` CLI option overrides the global setting for one session.
+`auto` and `strict` require `explicit_finish` for their STRICT tier; LIGHT always ends on the text answer, so `light` works with any completion mode. The task-verification policy is read only from global settings, so a repository-local `.p/settings.json` cannot silently weaken or replace it. The explicit `--task-verification` CLI option overrides the global setting for one session, and `/verify` overrides it for the current session. A legacy `taskVerificationMode` is migrated on load: `evidence` becomes `{ "mode": "strict" }`, `audit` becomes `{ "mode": "strict", "engine": "audit" }`, and `off` stays `off`. See [Adaptive verification tiers](usage.md#adaptive-verification-tiers).
 
 ### Message Delivery
 

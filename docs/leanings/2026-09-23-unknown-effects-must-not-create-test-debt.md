@@ -1,0 +1,22 @@
+# 2026-09-23 — Unknown effects and failed snapshots must not create test debt
+
+- **Status:** Resolved
+- **Task/context:** Adaptive verification tiers. This learning covers a real read-only hardware investigation run from the home directory on 2026-09-21 and 2026-09-22. The run used bash inspection commands, web search, and an MCP workspace tracker.
+- **Unexpected observation or failure:** The investigation was forced into strict evidence. Tool results repeatedly said "A pathless mutation could not be bounded to exact test paths", and `finish_work` was rejected because "changed test paths still need a direct successful broad test run". The run had 64 tool errors in 340 calls, and the model ran dummy commands to satisfy the gate.
+- **Evidence:** In the session log, the pathless guidance was appended to 181 `bash` results and to many MCP (`secure_hub_workspace_*`) and `web_search_exa` results. A controller regression test showed the mechanism. With a missing or unsnapshottable workspace, an inspection command such as `node -e "console.log(require('os').cpus().length)"` set `unverifiedTestPathOverflow`, because the before-hook had counted it as a potential mutation attempt.
+- **Approaches tried:**
+  - **Attempt:** Escalate LIGHT to STRICT on any unknown-effect or external tool success, as in the initial tier design.
+    - **Outcome:** Rejected.
+    - **Why:** MCP trackers, search tools, and state-record tools have no declared effect. Treating them as mutations reproduces the failure.
+  - **Attempt:** Limit LIGHT observation to built-in `edit`, `write`, and shell tools. Escalate only when a source, test, or build-config path appears in the ledger.
+    - **Outcome:** Worked.
+    - **Why:** Extension tools pass through untouched in LIGHT and never enter the ledger.
+  - **Attempt:** Create changed-test or tracking debt from an unbounded snapshot only when a mutation was actually detected: a direct edit or write, a recognized mutating command, or a changed fingerprint.
+    - **Outcome:** Worked.
+    - **Why:** Inspection commands no longer create debt. A detected unbounded mutation still fails closed.
+- **Root cause:** The engine equated "might mutate" (unknown effect, or a shell command that is not confidently read-only) with "did mutate" whenever it could not prove otherwise. A snapshot failure in a huge non-repository directory was indistinguishable from an unbounded write.
+- **Resolution:** `observedInLightTier` restricts LIGHT observation to built-in file and shell tools. `effectEscalation` escalates only on source, test, or build-config paths. `settleWorkspaceTestMutations` and `do_afterToolCall` record an unbounded snapshot only together with a detected mutation.
+- **Verification:** `test/suite/adaptive-verification-unknown-effect-tools.test.ts` stays LIGHT with zero ledger entries. It fails with a mutation revision of 2 when extension tools are observed. `test/task-verification-unbounded-snapshot-debt.test.ts` covers two cases: a missing workspace, and a directory outside Git with more than 2,000 test files. In both, an inspection command and an MCP-style tool create no debt. Both cases fail on the previous engine code ("expected true to be false") and pass now. In the same oversized directory, a recognized `cp` that adds a test file still requires a broad test run. `test/task-verification-test-authoring-bypasses.test.ts` keeps the fail-closed case for a detected pathless mutation (`touch generated.test.js`).
+- **Prevention/follow-up:** A write that is neither recognized nor fingerprinted, in an unsnapshottable directory, now goes unverified. That is the accepted trade-off against false debt. Keep code work inside repositories, where Git-backed snapshots stay bounded.
+- **Reusable learning:** A verification gate must distinguish "cannot observe" from "observed a change". Fail closed only on evidence of an effect, and never on an effect that is merely possible for a tool whose effect is unknown.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/observe-only-gate.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/test-authoring-gate.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/mutation-tracking.ts`

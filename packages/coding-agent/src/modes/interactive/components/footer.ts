@@ -12,6 +12,7 @@ import {
   renderProgressBar,
   sanitizeStatusText,
 } from "./footer-progress.ts";
+import { formatVerificationTierBadge } from "./footer-verification-badge.ts";
 
 export { formatCwdForFooter, formatEta, formatIndexingStatus, formatTokens, QUEUED_FOOTER_ANIMATION_MS };
 
@@ -159,6 +160,8 @@ export class FooterComponent implements Component {
     if (this.session.interactionMode === "plan") {
       statsParts.push(theme.fg("accent", theme.bold("PLAN")));
     }
+    const verificationBadge = formatVerificationTierBadge(this.session.getVerificationTierStatus());
+    if (verificationBadge) statsParts.push(theme.fg(verificationBadge.color, verificationBadge.text));
 
     if (this.showTokenProgress) {
       const queued = this.footerData.getQueuedProgress();

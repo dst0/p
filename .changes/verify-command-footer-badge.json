@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Add the `/verify [auto|light|strict|off]` session command and a footer badge showing the current verification tier."
+}
