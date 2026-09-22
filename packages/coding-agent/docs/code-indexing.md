@@ -53,6 +53,8 @@ The service installer currently supports:
 - Linux arm64 and x64 through a systemd user service;
 - Python 3.10 or newer, except Intel macOS, which requires Python 3.10–3.12.
 
+The generated service launches the Node binary that ran the installer through a stable path. When a `node` on the installing shell's `PATH` resolves to that same binary and is not itself version- or session-scoped, the service records that link, for example Homebrew's `/opt/homebrew/bin/node` instead of `/opt/homebrew/Cellar/node/<version>/bin/node`, which `brew upgrade node` deletes. Version-specific installs such as nvm, asdf, Volta, Homebrew `HEAD` builds, or snap revisions have no such link; the installer then keeps the running binary and warns that `./reinstall.sh` must be rerun after upgrading or removing that Node version. The service `PATH` starts with the managed Python environment, followed by the installing shell's `PATH` without empty, relative, missing, duplicate, or temporary entries (the system temporary directory, `/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders`, and any `tmp` or `temp` path segment).
+
 Normal npm installation does not run this source-checkout service installer.
 
 ## Enable a repository

@@ -102,3 +102,19 @@ describe("indexing-version runtime dependencies", () => {
     expect(realVersion.length).toBe(64);
   });
 });
+
+describe("indexing-version service launch path dependencies", () => {
+  it.each(["indexing-service-node-executable.js", "indexing-service-search-path.js"])(
+    "changes computeIndexingVersion when service launch path helper %s changes",
+    (scriptName) => {
+      const root = createMockProjectRoot();
+      const scriptPath = path.join(root, "scripts", scriptName);
+      fs.writeFileSync(scriptPath, "export const launchPolicy = 1;\n");
+      const versionBefore = computeIndexingVersion(root);
+
+      fs.writeFileSync(scriptPath, "export const launchPolicy = 2;\n");
+
+      expect(computeIndexingVersion(root)).not.toBe(versionBefore);
+    },
+  );
+});
