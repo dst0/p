@@ -13,6 +13,58 @@ export const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 
 export const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 
+// Matches the connect-level errno strings a Node fetch surfaces when a host is briefly
+// unreachable (e.g. a LAN model box asleep or rebooting), as opposed to a remote API
+// returning an HTTP error. See packages/ai openai-completions provider error strings,
+// shaped like "Connection error. (fetch failed -> EHOSTDOWN connect 192.168.x.x)".
+export const HOST_UNAVAILABLE_RETRY_PATTERN = /ehostdown|ehostunreach|enetunreach|econnrefused/i;
+
+export const HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS = 30_000;
+
+/** True when `baseUrl` resolves to loopback, RFC1918, link-local, or a `.local` mDNS host. */
+export function isLocalOrLanBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const host = hostname.replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "::1" || hostname.endsWith(".local")) return true;
+  if (host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) {
+    return true;
+  }
+  if (host.startsWith("fe80:")) return true;
+  const octets = host.split(".");
+  if (octets.length === 4 && octets[0] === "172") {
+    const second = Number.parseInt(octets[1], 10);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+/** True only for a connect-level host-unavailable error against a local/LAN model host. */
+export function isHostUnavailableError(errorMessage: string | undefined, baseUrl: string | undefined): boolean {
+  return HOST_UNAVAILABLE_RETRY_PATTERN.test(errorMessage ?? "") && isLocalOrLanBaseUrl(baseUrl);
+}
+
+/**
+ * Number of attempts whose exponential backoff (capped at HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS
+ * per attempt) sums to at least `budgetMs`. Pure so it can simulate the schedule in tests
+ * without waiting real time.
+ */
+export function computeHostUnavailableMaxAttempts(baseDelayMs: number, budgetMs: number): number {
+  const delayBase = baseDelayMs > 0 ? baseDelayMs : 1;
+  let elapsed = 0;
+  let attempt = 0;
+  while (elapsed < budgetMs && attempt < 1000) {
+    attempt++;
+    elapsed += Math.min(delayBase * 2 ** (attempt - 1), HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS);
+  }
+  return attempt;
+}
+
 export const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
 
 export const MARK_SESSION_PROGRESS_TOOL_NAME = "mark_session_progress";

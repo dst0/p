@@ -168,7 +168,11 @@ export async function handleLifecycleEvent(self: InteractiveMode, event: AgentSe
       self.statusContainer.clear();
       self.retryCountdown?.dispose();
       const retryPrefix =
-        event.reason === "model_loading" || self.getRecentModelSwitch() ? "Model switching; retrying" : "Retrying";
+        event.reason === "model_loading" || self.getRecentModelSwitch()
+          ? "Model switching; retrying"
+          : event.reason === "host_unavailable"
+            ? "Model host unreachable, retrying"
+            : "Retrying";
       const retryMessage = (seconds: number) =>
         `${retryPrefix} (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
       self.retryLoader = new Loader(

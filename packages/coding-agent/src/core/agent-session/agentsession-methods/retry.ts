@@ -5,6 +5,9 @@ import { evaluateGuardrails } from "../../guardrails.ts";
 import { type BashOperations, createLocalBashOperations } from "../../tools/bash.ts";
 import type { AgentSession } from "../agentsession.ts";
 import {
+  computeHostUnavailableMaxAttempts,
+  HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS,
+  isHostUnavailableError,
   MODEL_RECOVERY_BASE_DELAY_MS,
   MODEL_RECOVERY_MAX_RETRY_DELAY_MS,
   MODEL_RECOVERY_MIN_RETRIES,
@@ -66,31 +69,47 @@ export async function do__prepareRetry(self: AgentSession, message: AssistantMes
 }
 
 export function do__getEffectiveRetryMaxAttempts(
-  _self: AgentSession,
+  self: AgentSession,
   message: AssistantMessage,
   configuredMaxRetries: number,
 ): number {
-  if (MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) {
     return Math.max(configuredMaxRetries, MODEL_RECOVERY_MIN_RETRIES);
+  }
+  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) {
+    const settings = self.settingsManager.getRetrySettings();
+    const attempts = computeHostUnavailableMaxAttempts(settings.baseDelayMs, settings.hostUnavailableMaxMs);
+    return Math.max(configuredMaxRetries, attempts);
   }
   return configuredMaxRetries;
 }
 
-export function do__getRetryReason(_self: AgentSession, message: AssistantMessage): "model_loading" | "transient" {
-  return MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "") ? "model_loading" : "transient";
+export function do__getRetryReason(
+  self: AgentSession,
+  message: AssistantMessage,
+): "model_loading" | "host_unavailable" | "transient" {
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) return "model_loading";
+  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) return "host_unavailable";
+  return "transient";
 }
 
 export function do__getRetryDelayMs(
-  _self: AgentSession,
+  self: AgentSession,
   message: AssistantMessage,
   attempt: number,
   baseDelayMs: number,
 ): number {
-  if (!MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
-    return baseDelayMs * 2 ** (attempt - 1);
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) {
+    const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
+    return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
   }
-  const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
-  return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
+  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) {
+    return Math.min(baseDelayMs * 2 ** (attempt - 1), HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS);
+  }
+  return baseDelayMs * 2 ** (attempt - 1);
 }
 
 export function do_abortRetry(self: AgentSession): void {

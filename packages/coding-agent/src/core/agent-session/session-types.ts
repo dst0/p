@@ -93,7 +93,7 @@ export type AgentSessionEvent =
       maxAttempts: number;
       delayMs: number;
       errorMessage: string;
-      reason: "model_loading" | "transient";
+      reason: "model_loading" | "host_unavailable" | "transient";
     }
   | {
       type: "auto_retry_end";
