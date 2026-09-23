@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CEREMONY_TOOLS,
+  classifyWaitState,
   collectAnswerText,
   computeMetrics,
   evaluateSuccess,
+  explainOutcome,
   extractRuntimeInfo,
   isTurnComplete,
   parseClaimedPass,
@@ -80,6 +82,31 @@ test("isTurnComplete honors a custom terminal-tools set", () => {
   assert.equal(isTurnComplete(midLoop, new Set(["read"])), true);
 });
 
+test("isTurnComplete follows the active branch via parentId, ignoring an abandoned sibling's dangling toolCall", () => {
+  // A retried/regenerated turn: msgA (id a1) issues a toolCall that never gets a toolResult
+  // because it was abandoned in favor of msgB (id a2), a SIBLING with the same parentId, which
+  // is the real, already-finished branch. Written in file order: root, msgA, msgB.
+  const root = { type: "session", timestamp: T0, id: "root" };
+  const msgA = { type: "message", timestamp: T0, id: "a1", parentId: "root", message: { role: "assistant", content: [{ type: "toolCall", id: "orphan", name: "bash", arguments: {} }], stopReason: "toolUse" } };
+  const msgB = { type: "message", timestamp: T1, id: "a2", parentId: "root", message: { role: "assistant", content: [{ type: "text", text: "Done." }], stopReason: "stop" } };
+  const branched = [root, msgA, msgB];
+  assert.equal(isTurnComplete(branched), true, "the active leaf (msgB) is complete; msgA's toolCall is on a dead branch");
+
+  // Sanity: without the id/parentId tree, a flat reading would wrongly see "orphan" as pending
+  // forever. Confirm that's specifically what activeEventPath's tree-walk fixes, by checking the
+  // same content without ids falls back to flat (and would disagree if msgA came after msgB).
+  const flatOrderMattersCase = [{ type: "message", timestamp: T0, message: msgB.message }, { type: "message", timestamp: T1, message: msgA.message }];
+  assert.equal(isTurnComplete(flatOrderMattersCase), false, "without ids, the flat last-event (msgA's toolCall) is genuinely pending");
+});
+
+test("classifyWaitState distinguishes complete, stalled, and still-pending", () => {
+  assert.equal(classifyWaitState(true, 5000, 5000, 90000), "complete");
+  assert.equal(classifyWaitState(true, 4999, 5000, 90000), "pending", "not idle long enough yet, even though complete");
+  assert.equal(classifyWaitState(false, 89999, 5000, 90000), "pending", "not stalled yet");
+  assert.equal(classifyWaitState(false, 90000, 5000, 90000), "stalled");
+  assert.equal(classifyWaitState(false, 1000, 5000, 90000), "pending");
+});
+
 test("computeMetrics counts calls, ceremony overhead, tokens (with fallback), and wall time", () => {
   const metrics = computeMetrics(P_SHAPED_EVENTS);
   assert.equal(metrics.modelCalls, 4);
@@ -108,11 +135,19 @@ test("extractRuntimeInfo reads the first model_change/thinking_level_change even
   assert.deepEqual(extractRuntimeInfo([]), { provider: undefined, model: undefined, thinking: undefined });
 });
 
-test("parseClaimedPass reads an unambiguous pass/fail claim and returns undefined otherwise", () => {
+test("parseClaimedPass reads realistic agent answers, including ones mentioning both words", () => {
+  // node:test's own summary style ("pass N" / "fail N") and paraphrases of it are NOT ambiguous
+  // just because both words appear — a real run's exit code is nonzero iff fail count > 0.
   assert.equal(parseClaimedPass("All tests pass."), true);
-  assert.equal(parseClaimedPass("One test failed."), false);
-  assert.equal(parseClaimedPass("Tests: 1 passed, 1 failed."), undefined);
-  assert.equal(parseClaimedPass("I ran the tests."), undefined);
+  assert.equal(parseClaimedPass("2 tests failed: sub returns 5…"), false);
+  assert.equal(parseClaimedPass("Tests fail"), false);
+  assert.equal(parseClaimedPass("✖ 1 failing"), false);
+  assert.equal(parseClaimedPass("The test suite does not pass"), false, "negation of pass must not read as a pass claim");
+  assert.equal(parseClaimedPass("Ran node --test: 2 passed, 0 failed."), true, "a neutralized zero-fail count is not a fail claim");
+  assert.equal(parseClaimedPass("ℹ pass 2\nℹ fail 0"), true, "raw node:test summary lines");
+  assert.equal(parseClaimedPass("All tests passed, no failures."), true);
+  assert.equal(parseClaimedPass("1 passed, 1 failed"), false, "any real non-zero failure count wins over a pass mention");
+  assert.equal(parseClaimedPass("I ran the tests."), undefined, "no clear claim either way");
 });
 
 test("evaluateSuccess requires every pattern to match for text-checked prompts", () => {
@@ -133,7 +168,28 @@ test("evaluateSuccess for agree-checked prompts requires the claim to match the 
   assert.equal(evaluateSuccess(prompt, "All tests pass.", 1), false, "claimed pass, really failed");
   assert.equal(evaluateSuccess(prompt, "The tests failed.", 1), true, "claimed fail, really failed");
   assert.equal(evaluateSuccess(prompt, "The tests failed.", 0), false, "claimed fail, really passed");
+  assert.equal(evaluateSuccess(prompt, "2 tests failed: sub returns 5", 1), true, "realistic fail claim, really failed");
+  assert.equal(evaluateSuccess(prompt, "Ran node --test: 2 passed, 0 failed.", 0), true, "realistic pass claim, really passed");
   assert.equal(evaluateSuccess(prompt, "I ran node --test.", 0), false, "no clear claim never counts as agreement");
+});
+
+test("explainOutcome reports claimed/actual/reason for each check kind", () => {
+  const exitOutcome = explainOutcome({ check: "exit" }, "irrelevant", 1);
+  assert.deepEqual(exitOutcome, { success: false, claimed: undefined, actual: false, reason: "node --test exited 1" });
+
+  const agreeOutcome = explainOutcome({ check: "agree" }, "All tests pass.", 1);
+  assert.equal(agreeOutcome.success, false);
+  assert.equal(agreeOutcome.claimed, true);
+  assert.equal(agreeOutcome.actual, false);
+  assert.match(agreeOutcome.reason, /claimed pass, tests really failed \(disagree\)/);
+
+  const unclearOutcome = explainOutcome({ check: "agree" }, "I ran the tests.", 0);
+  assert.equal(unclearOutcome.claimed, undefined);
+  assert.match(unclearOutcome.reason, /did not make a clear pass\/fail claim/);
+
+  const textOutcome = explainOutcome({ check: "text", patterns: [/add/i, /sub/i] }, "exports add only", undefined);
+  assert.equal(textOutcome.success, false);
+  assert.match(textOutcome.reason, /missing pattern\(s\)/);
 });
 
 test("prompt 2's file:line pattern requires math.ts and the line number to be adjacent", () => {

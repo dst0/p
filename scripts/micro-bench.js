@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // Small micro-benchmark: p vs upstream pi on everyday tasks against the same local model.
 // Measures wall time, model/tool call counts, "ceremony" tool overhead, and token usage, across
-// --reps repetitions with alternating agent order. Pure logic lives in micro-bench-metrics.js
-// (kept separate so both files stay under the repo's 300-line cap); see micro-bench.test.js.
+// --reps repetitions with alternating agent order (--prompts filters to a subset). Pure logic
+// lives in micro-bench-metrics.js (kept separate so both files stay under the repo's 300-line
+// cap); see micro-bench.test.js. Every run's session JSONL, answer text, and node --test output
+// are retained under the results dir (before its temp fixture is cleaned up) for diagnosis.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  classifyWaitState,
   collectAnswerText,
   computeMetrics,
-  evaluateSuccess,
+  explainOutcome,
   extractRuntimeInfo,
   MATH_TS,
   parseSessionEvents,
@@ -18,6 +21,8 @@ import {
   isTurnComplete,
   summarizeResults,
 } from "./micro-bench-metrics.js";
+
+const STALL_MS = 90000; // no JSONL progress for this long while something is still pending: stuck
 
 const sh = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: "utf8", ...opts });
 const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
@@ -86,10 +91,10 @@ async function waitReady(session, modelId, timeoutMs) {
   return false;
 }
 
-// Primary completion gate is structural (isTurnComplete + idle-ms since the last JSONL write),
-// which stays correct while a tool is still executing regardless of what the pane shows. The
-// pane is only a secondary guard, used solely to shortcut a hung/crashed session's failure.
-async function waitCompletion(session, sessionsDir, modelId, timeoutMs, idleMs = 5000) {
+// Primary completion gate is structural (isTurnComplete + idle-ms since the last JSONL write, via
+// classifyWaitState), which stays correct while a tool is still executing regardless of what the
+// pane shows. The pane is only a secondary guard, used solely to shortcut a crashed session.
+async function waitCompletion(session, sessionsDir, modelId, timeoutMs, idleMs = 5000, stallMs = STALL_MS) {
   const start = Date.now();
   let sessionFile;
   while (Date.now() - start < timeoutMs) {
@@ -97,12 +102,24 @@ async function waitCompletion(session, sessionsDir, modelId, timeoutMs, idleMs =
     if (sessionFile) {
       const events = parseSessionEvents(fs.readFileSync(sessionFile, "utf8"));
       const idleFor = Date.now() - fs.statSync(sessionFile).mtimeMs;
-      if (isTurnComplete(events) && idleFor >= idleMs) return { sessionFile, timedOut: false };
+      const state = classifyWaitState(isTurnComplete(events), idleFor, idleMs, stallMs);
+      if (state === "complete") return { sessionFile, timedOut: false };
+      if (state === "stalled") return { sessionFile, timedOut: true, stalled: true };
     }
     if (looksCrashed(capturePane(session), modelId)) return { sessionFile, timedOut: true, crashed: true };
     await sleep(1000);
   }
   return { sessionFile, timedOut: true };
+}
+
+function retainEvidence(outDir, prefix, { sessionFile, answer, testResult, paneSnapshot }) {
+  if (sessionFile) fs.copyFileSync(sessionFile, path.join(outDir, `session-${prefix}.jsonl`));
+  fs.writeFileSync(path.join(outDir, `answer-${prefix}.txt`), answer || "(no answer text captured)");
+  fs.writeFileSync(
+    path.join(outDir, `test-output-${prefix}.txt`),
+    `$ node --test\n(exit ${testResult.status})\n\n${testResult.stdout ?? ""}\n${testResult.stderr ?? ""}`,
+  );
+  if (paneSnapshot !== undefined) fs.writeFileSync(path.join(outDir, `harness-error-${prefix}.txt`), paneSnapshot);
 }
 
 async function runOnce(agent, prompt, provider, modelId, rep, outDir) {
@@ -123,6 +140,7 @@ async function runOnce(agent, prompt, provider, modelId, rep, outDir) {
     let sessionFile;
     let timedOut = !ready;
     let harnessError = !ready;
+    let harnessReason = ready ? undefined : "ready-timeout: the TUI never reached a ready state within 60s";
     let paneSnapshot = ready ? undefined : capturePane(session);
     if (ready) {
       tmux("send-keys", "-t", session, "-l", prompt.text);
@@ -130,19 +148,22 @@ async function runOnce(agent, prompt, provider, modelId, rep, outDir) {
       tmux("send-keys", "-t", session, "Enter");
       const completion = await waitCompletion(session, path.join(agentDir, "sessions"), modelId, 300000);
       ({ sessionFile, timedOut } = completion);
-      if (completion.crashed) {
+      if (completion.crashed || completion.stalled) {
         harnessError = true;
+        harnessReason = completion.crashed
+          ? "crashed: the pane no longer shows the TUI"
+          : `stalled: no session progress for >=${STALL_MS / 1000}s with a pending tool call`;
         paneSnapshot = capturePane(session);
       }
     }
 
     const events = sessionFile ? parseSessionEvents(fs.readFileSync(sessionFile, "utf8")) : [];
-    const needsExit = prompt.check === "exit" || prompt.check === "agree";
-    const testExitCode = ready && needsExit ? sh("node", ["--test"], { cwd: repoDir }).status : undefined;
-    const success = ready && evaluateSuccess(prompt, collectAnswerText(events), testExitCode);
-    if (paneSnapshot !== undefined) {
-      fs.writeFileSync(path.join(outDir, `harness-error-${agent.label}-${prompt.id}-rep${rep}.txt`), paneSnapshot);
-    }
+    const answer = collectAnswerText(events);
+    const testResult = sh("node", ["--test"], { cwd: repoDir }); // always run: grading input + evidence
+    const outcome = ready ? explainOutcome(prompt, answer, testResult.status) : { success: false, claimed: undefined, actual: undefined, reason: harnessReason };
+    const success = ready && outcome.success;
+
+    retainEvidence(outDir, `${agent.label}-${prompt.id}-rep${rep}`, { sessionFile, answer, testResult, paneSnapshot });
     return {
       agent: agent.label,
       prompt: prompt.id,
@@ -150,6 +171,9 @@ async function runOnce(agent, prompt, provider, modelId, rep, outDir) {
       success,
       timedOut,
       harnessError,
+      claimed: outcome.claimed,
+      actual: outcome.actual,
+      reason: outcome.reason,
       ...computeMetrics(events),
       ...extractRuntimeInfo(events),
     };
@@ -166,9 +190,9 @@ function toMarkdownTable(cols, rows) {
 }
 
 function toDetailTable(results) {
-  const cols = ["Agent", "Prompt", "Rep", "Status", "Wall(s)", "Model calls", "Tool calls", "Ceremony", "1st req in-tok", "Total tok"];
+  const cols = ["Agent", "Prompt", "Rep", "Status", "Wall(s)", "Model calls", "Tool calls", "Ceremony", "1st req in-tok", "Total tok", "Reason"];
   const rows = results.map((r) => [
-    r.agent, r.prompt, r.rep + 1, statusLabel(r), r.wallSeconds.toFixed(1), r.modelCalls, r.toolCalls, r.ceremonyCalls, r.firstRequestInputTokens, r.totalTokens,
+    r.agent, r.prompt, r.rep + 1, statusLabel(r), r.wallSeconds.toFixed(1), r.modelCalls, r.toolCalls, r.ceremonyCalls, r.firstRequestInputTokens, r.totalTokens, r.reason ?? "",
   ]);
   return toMarkdownTable(cols, rows);
 }
@@ -181,10 +205,22 @@ function toSummaryTable(results) {
   return toMarkdownTable(cols, rows);
 }
 
-function parseReps(argv) {
-  const i = argv.indexOf("--reps");
+function parseIntArg(argv, flag, fallback) {
+  const i = argv.indexOf(flag);
   const n = i === -1 ? Number.NaN : Number.parseInt(argv[i + 1], 10);
-  return Number.isFinite(n) && n > 0 ? n : 3;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function parsePromptFilter(argv) {
+  const i = argv.indexOf("--prompts");
+  if (i === -1) return undefined;
+  const ids = new Set(
+    (argv[i + 1] ?? "")
+      .split(",")
+      .map((s) => Number.parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n)),
+  );
+  return ids.size > 0 ? ids : undefined;
 }
 
 async function main() {
@@ -217,22 +253,25 @@ async function main() {
       binSource: path.join(os.homedir(), ".pi/agent/bin"),
     },
   ];
-  const reps = parseReps(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const reps = parseIntArg(argv, "--reps", 3);
+  const promptFilter = parsePromptFilter(argv);
+  const activePrompts = promptFilter ? PROMPTS.filter((p) => promptFilter.has(p.id)) : PROMPTS;
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "p-micro-bench-"));
 
   const results = [];
-  for (const prompt of PROMPTS) {
+  for (const prompt of activePrompts) {
     for (let rep = 0; rep < reps; rep++) {
       const order = rep % 2 === 0 ? agents : [...agents].reverse();
       for (const agent of order) {
         console.error(`Running ${agent.label} / prompt ${prompt.id} / rep ${rep + 1}...`);
         try {
           const result = await runOnce(agent, prompt, provider, modelId, rep, outDir);
-          console.error(`  resolved ${result.provider ?? "?"}/${result.model ?? "?"} @ ${result.thinking ?? "?"}`);
+          console.error(`  resolved ${result.provider ?? "?"}/${result.model ?? "?"} @ ${result.thinking ?? "?"} — ${result.reason}`);
           results.push(result);
         } catch (error) {
           console.error(`  failed: ${error instanceof Error ? error.message : String(error)}`);
-          results.push({ agent: agent.label, prompt: prompt.id, rep, success: false, timedOut: false, harnessError: true, modelCalls: 0, toolCalls: 0, ceremonyCalls: 0, firstRequestInputTokens: 0, totalTokens: 0, wallSeconds: 0, error: String(error) });
+          results.push({ agent: agent.label, prompt: prompt.id, rep, success: false, timedOut: false, harnessError: true, reason: String(error), modelCalls: 0, toolCalls: 0, ceremonyCalls: 0, firstRequestInputTokens: 0, totalTokens: 0, wallSeconds: 0 });
         }
       }
     }
