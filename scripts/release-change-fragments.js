@@ -11,7 +11,9 @@ import {
 } from "./release-changelog-audit.js";
 import { parseReleaseChangeFragment } from "./release-fragment-parser.js";
 import {
+  getHistoricalFragmentPackageAliases,
   getHistoricalReleaseFragmentException,
+  historicalFragmentPackageAliases,
   matchesHistoricalLegacyFragment,
 } from "./release-historical-fragment-exceptions.js";
 
@@ -26,7 +28,7 @@ function git(repoRoot, args) {
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
-function materialPaths(paths) {
+export function materialReleasePaths(paths) {
   return paths.filter(
     (path) =>
       !path.startsWith(".changes/") &&
@@ -119,11 +121,12 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
   const evidence = [];
   const introducedFragments = new Map();
   for (const commit of commits) {
-    const changedPaths = git(repoRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", `${commit}^`, commit])
-      .split("\n")
+    // -z keeps non-ASCII paths verbatim; quoted names would otherwise escape the material-path rules.
+    const changedPaths = git(repoRoot, ["diff-tree", "-z", "--no-commit-id", "--name-only", "-r", `${commit}^`, commit])
+      .split("\0")
       .filter(Boolean)
       .sort();
-    const affectedPackages = affectedChangelogPackages(materialPaths(changedPaths));
+    const affectedPackages = affectedChangelogPackages(materialReleasePaths(changedPaths));
     const fragmentPaths = changedPaths.filter(
       (path) =>
         path.startsWith(".changes/") &&
@@ -138,8 +141,10 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
     const allowLegacyNoneSummary = noneReasonCutoff !== undefined && isAncestor(repoRoot, commit, noneReasonCutoff);
     const fragments = fragmentPaths.map((path) => {
       const content = git(repoRoot, ["show", `${commit}:${path}`]);
-      const allowHistoricalLegacy = matchesHistoricalLegacyFragment(historicalException, path, sha256(content));
-      return parseReleaseChangeFragment(path, content, allowLegacyNoneSummary || allowHistoricalLegacy);
+      const contentHash = sha256(content);
+      const allowHistoricalLegacy = matchesHistoricalLegacyFragment(historicalException, path, contentHash);
+      const packageAliases = historicalFragmentPackageAliases(historicalException, path, contentHash);
+      return parseReleaseChangeFragment(path, content, allowLegacyNoneSummary || allowHistoricalLegacy, packageAliases);
     });
     for (const fragment of fragments) {
       const allowHistoricalLegacy = matchesHistoricalLegacyFragment(historicalException, fragment.path, fragment.contentHash);
@@ -189,7 +194,7 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
   return {
     policyCommit: startCommit,
     baseTag,
-    legacyAffectedPackages: affectedChangelogPackages(materialPaths(legacyPaths)),
+    legacyAffectedPackages: affectedChangelogPackages(materialReleasePaths(legacyPaths)),
     commits: evidence,
   };
 }
@@ -203,7 +208,8 @@ export function getCurrentChangeFragments(repoRoot) {
       const path = `.changes/${name}`;
       const content = readFileSync(join(repoRoot, path), "utf8");
       const legacyContent = noneReasonCutoff && contentAtRevision(repoRoot, noneReasonCutoff, path);
-      return parseReleaseChangeFragment(path, content, legacyContent === content);
+      const packageAliases = getHistoricalFragmentPackageAliases(path, sha256(content.trim()));
+      return parseReleaseChangeFragment(path, content, legacyContent === content, packageAliases);
     });
 }
 function addSummaries(content, type, summaries) {

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "None",
+  "reason": "Adds a regression test for the empty-response stop path of the bounded explicit-completion repairs."
+}

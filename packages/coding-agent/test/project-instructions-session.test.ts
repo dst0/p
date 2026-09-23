@@ -147,7 +147,12 @@ describe("session project instruction integration", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionCompiler: unavailable,
     });
-    expect(first.session.systemPrompt).toContain('mode="fallback"');
+    expect(first.session._projectInstructions.state.current?.manifest.mode).toBe("fallback");
+    // Fallback degrades to legacy context injection, which compacts files above 6,000 characters to rule lines.
+    expect(first.session.systemPrompt).toContain(`<project_instructions path="${workspace.agentsPath}">`);
+    expect(first.session.systemPrompt).toContain("[Large project rules file compacted from");
+    expect(first.session.systemPrompt).toContain("Always enforce first invariant 0.");
+    expect(first.session.systemPrompt).not.toContain("<project_instructions agents_sha256=");
     first.session.dispose();
 
     const compiler = createCompiler();

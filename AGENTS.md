@@ -68,6 +68,7 @@
 - Temporary release Git fixtures that recursively delete repositories, remotes, or clones must disable repository-local automatic and detached maintenance/GC unless the test explicitly owns and joins that background lifecycle.
 - Successful child-process regressions must give their kill timeout measured full-suite load margin rather than setting it near the focused runtime.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
+- Tests must never write to the real `~/.p/agent`. `packages/coding-agent` Vitest setup (`test/vitest-setup-isolated-agent-dir.ts`) points `P_CODING_AGENT_DIR` at a per-file temp dir and clears `P_CODING_AGENT_SESSION_DIR`; `test/agent-dir-test-isolation.test.ts` guards it. Do not bypass it, and restore these variables after deleting or overriding them.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 
 ## Version Bump
@@ -173,6 +174,8 @@ When closing issues via commit:
 Location: `packages/*/CHANGELOG.md` (one per package).
 
 Release-note inputs live in `.changes/*.json`. Every commit that changes releasable package or release-tool behavior must add or update a fragment in the same commit. A fragment names every affected changelog package, one canonical changelog category, and a specific single-line user-facing summary. Use `type: "None"` only with a concrete single-line reason for a deliberately non-user-facing change. The automated release audit binds each policy-era commit to the fragment IDs and content hashes, and the release transaction aggregates normal fragments into changelogs and removes the consumed files. Do not use an older unrelated fragment to cover a later commit. This proves deterministic package coverage, not the truth of arbitrary prose; reviewers remain responsible for the semantic accuracy of summaries and exemptions during normal PR review.
+
+The required CI job runs `scripts/release-pr-fragment-policy.js` against the PR base and applies the same per-commit rule to the squash-merge diff: every affected changelog package (`agent`, `ai`, `coding-agent`, `tui`; `code-index` and release-tool paths map to `coding-agent`) needs a new top-level fragment, and existing fragments cannot be edited or deleted. A PR merged without this gate cannot be fixed by a later fragment; it needs a reviewed historical exception. Test-only, refactor-only, or dependency-bump PRs under `packages/` still count as material: add a fragment with `type: "None"` and a concrete one-line reason (bot PRs need a maintainer to push that fragment before merge). The historical exception list covers only commits merged before this gate existed; do not add new entries for post-gate commits.
 
 Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
 

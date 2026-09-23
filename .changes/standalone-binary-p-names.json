@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Publish standalone release archives as `p-<platform>.tar.gz`/`.zip` with a `p` executable (`p/p` inside tarballs) instead of the upstream `pi-<platform>` and `pi` names; update download scripts that fetch `pi-*` assets."
+}

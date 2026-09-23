@@ -75,6 +75,8 @@ npm run test:cli                  # Smoke-test source CLI execution
 node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts # Test indexing version hash
 ```
 
+Coding-agent Vitest runs never use the real `~/.p/agent`. A global setup (`test/vitest-global-setup-agent-dir-root.ts`) creates one temporary root per run and deletes it at teardown; a per-file setup (`test/vitest-setup-isolated-agent-dir.ts`) points `P_CODING_AGENT_DIR` at a fresh directory inside that root and clears `P_CODING_AGENT_SESSION_DIR`. Default-path code such as `SessionManager.create(cwd)` without a session dir therefore writes into disposable storage. Tests that need specific agent-dir contents still set `P_CODING_AGENT_DIR` or pass `agentDir`/`sessionDir` explicitly.
+
 ## Project Structure
 
 ```
