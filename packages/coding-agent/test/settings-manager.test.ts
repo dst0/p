@@ -4,7 +4,11 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_COMPACTION_SETTINGS } from "../src/core/compaction/index.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS } from "../src/core/http-dispatcher.ts";
-import { DEFAULT_AGENT_RETRY_BASE_DELAY_MS, SettingsManager } from "../src/core/settings-manager.ts";
+import {
+  DEFAULT_AGENT_RETRY_BASE_DELAY_MS,
+  DEFAULT_HOST_UNAVAILABLE_MAX_MS,
+  SettingsManager,
+} from "../src/core/settings-manager.ts";
 
 describe("SettingsManager", () => {
   const testDir = join(process.cwd(), "test-settings-tmp");
@@ -410,6 +414,7 @@ describe("SettingsManager", () => {
         enabled: true,
         maxRetries: 3,
         baseDelayMs: DEFAULT_AGENT_RETRY_BASE_DELAY_MS,
+        hostUnavailableMaxMs: DEFAULT_HOST_UNAVAILABLE_MAX_MS,
       });
     });
   });
