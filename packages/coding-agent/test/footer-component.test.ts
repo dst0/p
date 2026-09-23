@@ -1,3 +1,4 @@
+import { visibleWidth } from "@dst0/p-tui";
 import chalk from "chalk";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { VerificationTierStatus } from "../src/core/agent-session/agentsession-verification-methods.ts";
@@ -154,6 +155,51 @@ describe("FooterComponent", () => {
     const queuedLine = output.split("\n").find((line) => line.includes("QUEUED"));
     expect(queuedLine!).toContain("#2, 1 ahead");
     expect(queuedLine!).not.toMatch(/\d+s/);
+  });
+
+  it("renders queue, model switch, and loading progress together", () => {
+    const footer = new FooterComponent(createSession("normal"), {
+      ...createFooterData(),
+      getQueuedProgress: () => ({
+        position: 1,
+        queuedAhead: 0,
+        queue: "worker",
+        source: "llm-orchestrator",
+      }),
+      getModelSwitchProgress: () => ({ fromModel: "mini-pc/old-model", toModel: "mini-pc/new-model" }),
+      getLoadingProgress: () => ({ model: "mini-pc/new-model" }),
+    });
+
+    const output = footer.render(240).join("\n");
+    expect(output).toContain("QUEUED");
+    expect(output).toContain("SWITCHING old-model → new-model");
+    expect(output).toContain("LOADING new-model");
+    expect(output.indexOf("QUEUED")).toBeLessThan(output.indexOf("SWITCHING"));
+  });
+
+  it("keeps concurrent queue and switch progress within an 80-column terminal", () => {
+    const footer = new FooterComponent(createSession("normal"), {
+      ...createFooterData(),
+      getQueuedProgress: () => ({
+        position: 2,
+        queuedAhead: 1,
+        queue: "worker",
+        source: "llm-orchestrator",
+      }),
+      getModelSwitchProgress: () => ({
+        fromModel: "mini-pc/qwen3.8-27b-iq4xs",
+        toModel: "mini-pc/sokann-qwen-27b-cache",
+      }),
+      getLoadingProgress: () => ({ model: "mini-pc/sokann-qwen-27b-cache" }),
+    });
+
+    const lines = footer.render(80);
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+    }
+    const output = lines.join("\n");
+    expect(output).toContain("QUEUED");
+    expect(output).toContain("SWITCHING qwen3.8-27b");
   });
 
   describe("showVersion", () => {

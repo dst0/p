@@ -5,6 +5,10 @@ import { selectProjectInstructionPromptForTools } from "../../project-instructio
 import { expandPromptTemplate } from "../../prompt-templates.ts";
 import { beginVerificationTierPrompt } from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
+import {
+  resolveProjectInstructionDelivery,
+  syncProjectInstructionFallbackDelivery,
+} from "../project-instruction-fallback-delivery.ts";
 import { preserveCompiledProjectInstructionPrompt } from "../project-instruction-integrity.ts";
 import type { PromptOptions } from "../session-types.ts";
 
@@ -88,6 +92,8 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
       throw new Error(formatNoApiKeyFoundMessage(self.model.provider));
     }
 
+    // Align instruction delivery first: a fallback switch rebuilds the system prompt, which the tier then reuses.
+    syncProjectInstructionFallbackDelivery(self);
     // Recompute the verification tier before the tool set and system prompt are captured.
     beginVerificationTierPrompt(self, expandedText);
 
@@ -140,7 +146,7 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
         ? selectProjectInstructionPromptForTools(preparedProjectInstructions, self.getActiveToolNames())
         : undefined;
     const effectiveSystemPrompt =
-      self._projectInstructionMode === "compiled"
+      resolveProjectInstructionDelivery(self) === "compiled"
         ? preserveCompiledProjectInstructionPrompt(extensionSystemPrompt, immutableProjectInstructionPrompt)
         : extensionSystemPrompt;
     const runtimePrompts = self._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt, messages);

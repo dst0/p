@@ -6,6 +6,7 @@ import { formatEta, formatIndexingStatus, formatTokens } from "./footer-indexing
 import {
   computeGenTrend,
   formatCwdForFooter,
+  formatProgressModelName,
   formatQueuedProgress,
   formatQueuedSpinner,
   QUEUED_FOOTER_ANIMATION_MS,
@@ -163,6 +164,7 @@ export class FooterComponent implements Component {
     const verificationBadge = formatVerificationTierBadge(this.session.getVerificationTierStatus());
     if (verificationBadge) statsParts.push(theme.fg(verificationBadge.color, verificationBadge.text));
 
+    const waitParts: string[] = [];
     if (this.showTokenProgress) {
       const queued = this.footerData.getQueuedProgress();
       const sending = this.footerData.getSendingProgress();
@@ -190,26 +192,27 @@ export class FooterComponent implements Component {
         this.lastGenRate = gen.tokensPerSecond;
       }
       if (!prefill && !gen && queued) {
-        statsParts.push(
+        waitParts.push(
           theme.fg("accent", `${theme.bold("QUEUED")} ${formatQueuedSpinner()} ${formatQueuedProgress(queued)}`),
         );
       }
       if (!prefill && !gen && !queued && sending) {
-        statsParts.push(theme.fg("accent", `${theme.bold("SENDING")} ${sending.model}`));
+        waitParts.push(theme.fg("accent", `${theme.bold("SENDING")} ${sending.model}`));
       }
       const modelSwitch = this.footerData.getModelSwitchProgress();
       if (modelSwitch) {
-        statsParts.push(
-          theme.fg("warning", `${theme.bold("SWITCHING")} ${modelSwitch.fromModel} → ${modelSwitch.toModel}`),
-        );
+        const from = formatProgressModelName(modelSwitch.fromModel);
+        const to = formatProgressModelName(modelSwitch.toModel);
+        waitParts.push(theme.fg("warning", `${theme.bold("SWITCHING")} ${from} → ${to}`));
       }
       const loading = this.footerData.getLoadingProgress();
       if (loading) {
-        statsParts.push(theme.fg("warning", `${theme.bold("LOADING")} ${loading.model}`));
+        waitParts.push(theme.fg("warning", `${theme.bold("LOADING")} ${formatProgressModelName(loading.model)}`));
       }
     }
 
-    let statsLeft = statsParts.join(" ");
+    // Waiting states lead so narrow terminals truncate token stats before the reason p is waiting.
+    let statsLeft = [...waitParts, ...statsParts].join(" ");
 
     // Add model name on the right side, plus thinking level if model supports it
     const sendingModel = this.footerData.getSendingProgress()?.model;

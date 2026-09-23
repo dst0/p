@@ -9,11 +9,14 @@ export function handleMessageEvent(self: InteractiveMode, event: AgentSessionEve
     case "request_start": {
       const recentSwitch = self.getRecentModelSwitch();
       const queuedRetry = self.footerDataProvider.getQueuedProgress()?.source === "llm-orchestrator";
-      self.footerDataProvider.clearProgress({ preserveQueued: queuedRetry });
-      if (!queuedRetry) {
-        if (recentSwitch) {
-          self.footerDataProvider.setModelSwitchProgress(recentSwitch);
-        }
+      self.footerDataProvider.clearProgress({
+        preserveQueued: queuedRetry,
+        preserveModelSwitch: Boolean(recentSwitch || queuedRetry),
+      });
+      if (recentSwitch) {
+        self.footerDataProvider.setModelSwitchProgress(recentSwitch);
+      }
+      if (!queuedRetry && !recentSwitch) {
         self.footerDataProvider.setSendingProgress({ model: self.getModelStatusLabel(event.model) });
       }
       self.ui.requestRender();
@@ -28,11 +31,17 @@ export function handleMessageEvent(self: InteractiveMode, event: AgentSessionEve
         self.updatePendingMessagesDisplay();
         self.ui.requestRender();
       } else if (event.message.role === "assistant") {
-        self.footerDataProvider.clearProgress();
-        self.footerDataProvider.setPrefillProgress({
-          percent: 0,
-          elapsedMs: 0,
+        const queuedRetry = self.footerDataProvider.getQueuedProgress()?.source === "llm-orchestrator";
+        self.footerDataProvider.clearProgress({
+          preserveQueued: queuedRetry,
+          preserveModelSwitch: queuedRetry,
         });
+        if (!queuedRetry) {
+          self.footerDataProvider.setPrefillProgress({
+            percent: 0,
+            elapsedMs: 0,
+          });
+        }
         self.streamingComponent = new AssistantMessageComponent(
           undefined,
           self.hideThinkingBlock,
@@ -54,8 +63,6 @@ export function handleMessageEvent(self: InteractiveMode, event: AgentSessionEve
           self.footerDataProvider.setPrefillProgress(undefined);
           self.footerDataProvider.setGenProgress(undefined);
           self.footerDataProvider.setSendingProgress(undefined);
-          self.footerDataProvider.setModelSwitchProgress(undefined);
-          self.footerDataProvider.setLoadingProgress(undefined);
           self.footerDataProvider.setQueuedProgress({
             position: event.assistantMessageEvent.position,
             queuedAhead: event.assistantMessageEvent.queuedAhead,
@@ -95,16 +102,18 @@ export function handleMessageEvent(self: InteractiveMode, event: AgentSessionEve
           self.footerDataProvider.setPrefillProgress(undefined);
           self.footerDataProvider.setGenProgress(undefined);
           self.footerDataProvider.setSendingProgress(undefined);
-          self.clearLlmOrchestratorQueueProgress();
-          self.footerDataProvider.setModelSwitchProgress({
-            fromModel: event.assistantMessageEvent.fromModel,
-            toModel: event.assistantMessageEvent.toModel,
-          });
+          if (event.assistantMessageEvent.phase === "complete") {
+            self.footerDataProvider.setModelSwitchProgress(undefined);
+          } else {
+            self.footerDataProvider.setModelSwitchProgress({
+              fromModel: event.assistantMessageEvent.fromModel,
+              toModel: event.assistantMessageEvent.toModel,
+            });
+          }
         } else if (event.assistantMessageEvent?.type === "loading_progress") {
           self.footerDataProvider.setPrefillProgress(undefined);
           self.footerDataProvider.setGenProgress(undefined);
           self.footerDataProvider.setSendingProgress(undefined);
-          self.clearLlmOrchestratorQueueProgress();
           self.footerDataProvider.setLoadingProgress({
             model: event.assistantMessageEvent.model,
           });
@@ -199,7 +208,10 @@ export function handleMessageEvent(self: InteractiveMode, event: AgentSessionEve
         );
         self.streamingComponent = undefined;
         self.streamingMessage = undefined;
-        self.footerDataProvider.clearProgress({ preserveQueued: isQueueSleepResponse });
+        self.footerDataProvider.clearProgress({
+          preserveQueued: isQueueSleepResponse,
+          preserveModelSwitch: isQueueSleepResponse,
+        });
         self.footer.invalidate();
       }
       self.ui.requestRender();

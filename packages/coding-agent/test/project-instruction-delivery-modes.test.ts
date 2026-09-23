@@ -206,7 +206,7 @@ describe("project instruction delivery modes", () => {
     }
   });
 
-  it("fails closed for mutations when compiled instruction generation falls back", async () => {
+  it("degrades to legacy delivery without a mutation gate when compiled instruction generation falls back", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
       cwd: workspace.root,
@@ -214,22 +214,31 @@ describe("project instruction delivery modes", () => {
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
+      taskVerificationMode: "off",
       projectInstructionCompiler: async () => {
         throw new Error("compiler unavailable");
       },
     });
     try {
+      expect(session._projectInstructions.state.current?.manifest.mode).toBe("fallback");
+      expect(session.systemPrompt).toContain(`<project_instructions path="${workspace.agentsPath}">`);
+      expect(session.systemPrompt).toContain("Always protect credentials before edits.");
+      expect(session.systemPrompt).not.toContain("<project_instructions agents_sha256=");
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
-      expect(turn.rulesPrompt).toContain("Do not mutate");
-      const blocked = await session.agent.beforeToolCall?.(
-        projectInstructionToolHookInput("edit", { path: "src/auth.ts" }),
-      );
-      expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+      expect(turn.rulesPrompt).toContain("<project_rules>");
+      expect(turn.rulesPrompt).not.toContain("project_rule_routes");
+      expect(turn.projectRuleGate).toBeUndefined();
+      expect(session._projectRuleGate).toBeUndefined();
+      for (const [toolName, args] of [
+        ["edit", { path: "src/auth.ts" }],
+        ["bash", { command: "npm test && ./deploy production" }],
+      ] as const) {
+        await expect(
+          session.agent.beforeToolCall?.(projectInstructionToolHookInput(toolName, args)),
+        ).resolves.toBeUndefined();
+      }
+      // The compiled readers stay usable against the fallback artifact's exact modules.
       await executeProjectInstructionReadRules(session, ["rules/catalog.md"]);
-      const stillBlocked = await session.agent.beforeToolCall?.(
-        projectInstructionToolHookInput("edit", { path: "src/auth.ts" }),
-      );
-      expect(stillBlocked).toMatchObject({ block: true });
     } finally {
       session.dispose();
     }

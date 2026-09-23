@@ -119,7 +119,7 @@ Verification effort follows the task. `taskVerification.mode` (global settings),
 
 `--task-verification evidence` and `--task-verification audit` still work and force STRICT with that engine. The legacy global `taskVerificationMode` setting migrates to `taskVerification`: `evidence` becomes `{ "mode": "strict" }`, `audit` becomes `{ "mode": "strict", "engine": "audit" }`, and `off` stays `off`.
 
-LIGHT keeps the first request small. The system prompt has a short guideline list and no completion protocol, session-state protocol, or subagent catalog. The tool list is `read`, `bash`, `edit`, `write`, `semantic_search`, `tool_search`, `begin_code_task`, and the compiled project-instruction readers. `process`, `sleep`, `update_session_state`, `mark_session_progress`, `session_recall`, and `keep_context` are deferred, and `tool_search` can activate them. A text answer ends the run. p adds turn checkpoints only after failed tool calls and sends no state reminders.
+LIGHT keeps the first request small. The system prompt has a short guideline list and no completion protocol, session-state protocol, or subagent catalog. The tool list is `read`, `bash`, `edit`, `write`, `semantic_search`, `tool_search`, `begin_code_task`, and the compiled project-instruction readers. `process`, `sleep`, `update_session_state`, `mark_session_progress`, `session_recall`, and `keep_context` are deferred, and `tool_search` can activate them. A text answer ends the run. p adds turn checkpoints only after failed tool calls and sends no state reminders. When compiled project instructions fall back to legacy delivery, LIGHT keeps the injected AGENTS.md/CLAUDE.md context and still omits the ceremony tools.
 
 In `auto`, three signals switch a task to STRICT:
 

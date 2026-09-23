@@ -61,6 +61,12 @@ export async function handleLifecycleEvent(self: InteractiveMode, event: AgentSe
       self.footer.invalidate();
       self.ui.requestRender();
       break;
+    case "project_instructions_fallback":
+      self.showWarning(event.message);
+      break;
+    case "project_instructions_restored":
+      self.showStatus(event.message);
+      break;
     case "agent_end":
       self.footerDataProvider.clearProgress();
       if (self.settingsManager.getShowTerminalProgress()) {

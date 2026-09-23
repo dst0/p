@@ -9,6 +9,10 @@ import {
   verificationToolGuidelines,
 } from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
+import {
+  isCompiledProjectInstructionFallbackActive,
+  resolveProjectInstructionDelivery,
+} from "../project-instruction-fallback-delivery.ts";
 
 export function do_setActiveToolsByName(self: AgentSession, toolNames: string[]): void {
   const reconciledToolNames = reconcileTaskVerificationRuntime(self, toolNames);
@@ -157,15 +161,20 @@ export function do__rebuildSystemPrompt(
   const loadedSkills = self._resourceLoader.getSkills().skills;
   const loadedContextFiles = self._resourceLoader.getAgentsFiles().agentsFiles;
   const preparedProjectInstructions = self._projectInstructions.state.current;
+  const delivery = resolveProjectInstructionDelivery(self);
+  // A mid-run rebuild (e.g. tool activation) cannot reach the running model; the next turn start applies it.
+  if (!self.isStreaming) {
+    self._projectInstructionFallbackPromptActive = isCompiledProjectInstructionFallbackActive(self);
+  }
   const projectInstructions =
-    self._projectInstructionMode === "compiled" && preparedProjectInstructions
+    delivery === "compiled" && preparedProjectInstructions
       ? selectProjectInstructionPromptForTools(preparedProjectInstructions, validToolNames)
       : undefined;
 
   self._baseSystemPromptOptions = {
     cwd: self._cwd,
     skills: loadedSkills,
-    contextFiles: self._projectInstructionMode === "legacy" ? loadedContextFiles : [],
+    contextFiles: delivery === "legacy" ? loadedContextFiles : [],
     projectInstructions,
     customPrompt: loaderSystemPrompt,
     appendSystemPrompt: appendSystemPrompt || undefined,

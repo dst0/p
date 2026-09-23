@@ -68,6 +68,10 @@ export class AgentSessionState {
   public _resourceLoader: ResourceLoader;
   public _projectInstructions: ProjectInstructionController;
   public _projectInstructionMode: ProjectInstructionDeliveryMode;
+  /** Whether the base system prompt was built with legacy fallback delivery for a compiled-mode session. */
+  public _projectInstructionFallbackPromptActive = false;
+  /** User-facing fallback notice lifecycle: none shown, shown for the current fallback, or shown before a retry. */
+  public _projectInstructionFallbackNotice: "none" | "announced" | "retried" = "none";
   public _projectRuleGate: ProjectRuleGate | undefined;
   public _projectRuleGateGeneration = 0;
   public _projectRuleReadStages = new Map<string, ProjectRuleReadStage>();

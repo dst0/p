@@ -28,7 +28,7 @@ export function createProjectInstructionController(
   const state = createProjectInstructionState();
   return {
     state,
-    async refresh() {
+    async refresh(refreshOptions) {
       const prepared = await prepareProjectInstructions({
         cwd: options.cwd,
         cacheDir: options.cacheDir,
@@ -36,7 +36,7 @@ export function createProjectInstructionController(
         skills: options.getSkills(),
         compiler: options.compiler,
         compilerIdentity: options.getCompilerIdentity?.(),
-        compilerFailureBackoffMs: options.compilerFailureBackoffMs,
+        compilerFailureBackoffMs: refreshOptions?.retryFailedCompilation ? 0 : options.compilerFailureBackoffMs,
       });
       state.current = prepared;
       return prepared;

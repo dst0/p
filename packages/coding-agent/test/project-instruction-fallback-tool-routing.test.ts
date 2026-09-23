@@ -28,6 +28,7 @@ describe("compiled fallback tool routing", () => {
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
+      taskVerificationMode: "off",
       projectInstructionCompiler: async () => {
         throw new Error("compiler unavailable");
       },
@@ -39,13 +40,14 @@ describe("compiled fallback tool routing", () => {
       const fallbackPath = getProjectInstructionFallbackPath(prepared.cacheDir, prepared.manifest.inputHash);
 
       expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["read_rules", "read_skills"]));
-      expect(session.systemPrompt).toContain("Rule catalog: `rules/catalog.md`");
+      expect(session.systemPrompt).toContain(`<project_instructions path="${workspace.agentsPath}">`);
+      expect(session.systemPrompt).not.toContain("Rule catalog: `rules/catalog.md`");
       expect.soft(session.systemPrompt).not.toContain("fallback.md");
 
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
       expect(turn.projectRuleLinks).toBeUndefined();
-      expect(turn.projectRuleGate?.candidateLinks).toEqual([]);
-      expect(session._projectRuleGate?.candidateLinks).toEqual([]);
+      expect(turn.projectRuleGate).toBeUndefined();
+      expect(session._projectRuleGate).toBeUndefined();
 
       const readRules = session.getToolDefinition("read_rules");
       expect(readRules).toBeDefined();
@@ -94,16 +96,15 @@ describe("compiled fallback tool routing", () => {
         ),
       ).toBe(true);
 
-      const blocked = await session.agent.beforeToolCall?.(
-        projectInstructionToolHookInput("edit", { path: "src/auth.ts" }),
-      );
-      expect(blocked).toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+      await expect(
+        session.agent.beforeToolCall?.(projectInstructionToolHookInput("edit", { path: "src/auth.ts" })),
+      ).resolves.toBeUndefined();
     } finally {
       session.dispose();
     }
   });
 
-  it("advertises and reads the physical fallback when only ordinary read is active", async () => {
+  it("injects legacy context instead of advertising the physical fallback when only ordinary read is active", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
       cwd: workspace.root,
@@ -124,7 +125,8 @@ describe("compiled fallback tool routing", () => {
 
       expect(session.getActiveToolNames()).toEqual(["read"]);
       expect(session.getToolDefinition("read_rules")).toBeUndefined();
-      expect(session.systemPrompt).toContain(fallbackPath);
+      expect(session.systemPrompt).toContain(`<project_instructions path="${workspace.agentsPath}">`);
+      expect(session.systemPrompt).not.toContain(fallbackPath);
 
       const read = session.getToolDefinition("read");
       expect(read).toBeDefined();
@@ -177,7 +179,8 @@ describe("compiled fallback tool routing", () => {
       expect(session.getActiveToolNames()).toEqual(["read", "read_rules"]);
       expect(session.getToolDefinition("read_rules")).toBeDefined();
       expect(session.getToolDefinition("read_skills")).toBeUndefined();
-      expect(session.systemPrompt).toContain("Rule catalog: `rules/catalog.md`");
+      expect(session.systemPrompt).toContain(`<project_instructions path="${workspace.agentsPath}">`);
+      expect(session.systemPrompt).not.toContain("<project_instructions agents_sha256=");
       expect
         .soft({
           exactPathExposed: session.systemPrompt.includes(fallbackPath),
