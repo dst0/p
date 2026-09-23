@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "packages": ["coding-agent"],
   "type": "Fixed",
-  "summary": "Extend the auto-retry budget (exponential backoff capped at 30s/attempt, ~10 min total) for connect-level EHOSTDOWN/EHOSTUNREACH/ENETUNREACH/ECONNREFUSED errors against a local or LAN model host, instead of giving up after the default 3 attempts."
+  "summary": "Extend the auto-retry budget (backoff capped at 30s/attempt, ~10 min total) for EHOSTDOWN/EHOSTUNREACH/ENETUNREACH/ETIMEDOUT/ECONNRESET/socket-hang-up errors against a local or LAN model host, and for ECONNREFUSED on a non-loopback LAN host; keep the normal budget with a \"server not running\" hint for ECONNREFUSED on loopback, and show a stderr retry line plus Ctrl+C cancellation in text/print mode."
 }

@@ -5,14 +5,16 @@ import { evaluateGuardrails } from "../../guardrails.ts";
 import { type BashOperations, createLocalBashOperations } from "../../tools/bash.ts";
 import type { AgentSession } from "../agentsession.ts";
 import {
-  computeHostUnavailableMaxAttempts,
-  HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS,
-  isHostUnavailableError,
   MODEL_RECOVERY_BASE_DELAY_MS,
   MODEL_RECOVERY_MAX_RETRY_DELAY_MS,
   MODEL_RECOVERY_MIN_RETRIES,
   MODEL_RECOVERY_RETRY_PATTERN,
 } from "../constants.ts";
+import {
+  classifyHostRetry,
+  computeHostUnavailableMaxAttempts,
+  HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS,
+} from "../host-retry-classification.ts";
 
 export async function do__prepareRetry(self: AgentSession, message: AssistantMessage): Promise<boolean> {
   const settings = self.settingsManager.getRetrySettings();
@@ -77,7 +79,9 @@ export function do__getEffectiveRetryMaxAttempts(
   if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) {
     return Math.max(configuredMaxRetries, MODEL_RECOVERY_MIN_RETRIES);
   }
-  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) {
+  // "loopback_refused" keeps the normal budget: the local server process isn't running, and
+  // no amount of waiting fixes that (see do__getRetryReason for the accompanying hint).
+  if (classifyHostRetry(errorMessage, self.model?.baseUrl) === "extended") {
     const settings = self.settingsManager.getRetrySettings();
     const attempts = computeHostUnavailableMaxAttempts(settings.baseDelayMs, settings.hostUnavailableMaxMs);
     return Math.max(configuredMaxRetries, attempts);
@@ -88,10 +92,12 @@ export function do__getEffectiveRetryMaxAttempts(
 export function do__getRetryReason(
   self: AgentSession,
   message: AssistantMessage,
-): "model_loading" | "host_unavailable" | "transient" {
+): "model_loading" | "host_unavailable" | "local_server_down" | "transient" {
   const errorMessage = message.errorMessage ?? "";
   if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) return "model_loading";
-  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) return "host_unavailable";
+  const hostClass = classifyHostRetry(errorMessage, self.model?.baseUrl);
+  if (hostClass === "extended") return "host_unavailable";
+  if (hostClass === "loopback_refused") return "local_server_down";
   return "transient";
 }
 
@@ -106,7 +112,7 @@ export function do__getRetryDelayMs(
     const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
     return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
   }
-  if (isHostUnavailableError(errorMessage, self.model?.baseUrl)) {
+  if (classifyHostRetry(errorMessage, self.model?.baseUrl) === "extended") {
     return Math.min(baseDelayMs * 2 ** (attempt - 1), HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS);
   }
   return baseDelayMs * 2 ** (attempt - 1);

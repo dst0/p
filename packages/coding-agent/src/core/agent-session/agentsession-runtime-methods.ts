@@ -194,7 +194,7 @@ export interface AgentSessionRuntimeMethods {
   _isRetryableError(message: AssistantMessage): boolean;
   _prepareRetry(message: AssistantMessage): Promise<boolean>;
   _getEffectiveRetryMaxAttempts(message: AssistantMessage, configuredMaxRetries: number): number;
-  _getRetryReason(message: AssistantMessage): "model_loading" | "host_unavailable" | "transient";
+  _getRetryReason(message: AssistantMessage): "model_loading" | "host_unavailable" | "local_server_down" | "transient";
   _getRetryDelayMs(message: AssistantMessage, attempt: number, baseDelayMs: number): number;
   abortRetry(): void;
   setAutoRetryEnabled(enabled: boolean): void;

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyHostRetry,
   computeHostUnavailableMaxAttempts,
+  describeBaseUrlHost,
   HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS,
-  isHostUnavailableError,
   isLocalOrLanBaseUrl,
-} from "../src/core/agent-session/constants.ts";
+  isLoopbackBaseUrl,
+} from "../src/core/agent-session/host-retry-classification.ts";
 
 describe("isLocalOrLanBaseUrl", () => {
   it("recognizes loopback, RFC1918, link-local, and mDNS hosts", () => {
@@ -46,24 +48,57 @@ describe("isLocalOrLanBaseUrl", () => {
   });
 });
 
-describe("isHostUnavailableError", () => {
-  const localBaseUrl = "http://192.168.1.50:8080/v1";
-  const remoteBaseUrl = "https://api.openai.com/v1";
-
-  it("matches connect-level host-unavailable errors only against a local/LAN base URL", () => {
-    const realMessage = "Connection error. (fetch failed -> EHOSTDOWN connect 192.168.1.50:8080)";
-    expect(isHostUnavailableError(realMessage, localBaseUrl)).toBe(true);
-    expect(isHostUnavailableError(realMessage, remoteBaseUrl)).toBe(false);
+describe("isLoopbackBaseUrl", () => {
+  it("is true only for localhost, 127.0.0.0/8, and ::1", () => {
+    for (const url of ["http://localhost:1234/v1", "http://127.0.0.1:8080/v1", "http://[::1]:8080/v1"]) {
+      expect(isLoopbackBaseUrl(url), url).toBe(true);
+    }
   });
 
-  it("matches EHOSTUNREACH, ENETUNREACH, and ECONNREFUSED variants", () => {
-    const variants = [
+  it("is false for LAN, RFC1918, and remote hosts", () => {
+    for (const url of ["http://192.168.1.50:8080/v1", "http://10.0.0.5:8080/v1", "https://api.openai.com/v1"]) {
+      expect(isLoopbackBaseUrl(url), url).toBe(false);
+    }
+  });
+});
+
+describe("classifyHostRetry", () => {
+  const loopbackBaseUrl = "http://127.0.0.1:1234/v1";
+  const lanBaseUrl = "http://192.168.1.50:8080/v1";
+  const remoteBaseUrl = "https://api.openai.com/v1";
+
+  it("grants the extended budget for a genuinely unreachable local/LAN host", () => {
+    const messages = [
+      "Connection error. (fetch failed -> EHOSTDOWN connect 192.168.1.50:8080)",
       "Connection error. (fetch failed -> EHOSTUNREACH connect 10.0.0.5:8080)",
       "Connection error. (fetch failed -> ENETUNREACH connect 172.16.0.5:8080)",
-      "Connection error. (fetch failed -> ECONNREFUSED connect 127.0.0.1:8080)",
+      "Connection error. (fetch failed -> ETIMEDOUT connect 192.168.1.50:8080)",
+      "Connection error. (fetch failed -> ECONNRESET read 192.168.1.50:8080)",
+      "Connection error. (fetch failed -> socket hang up)",
     ];
-    for (const message of variants) {
-      expect(isHostUnavailableError(message, localBaseUrl), message).toBe(true);
+    for (const message of messages) {
+      expect(classifyHostRetry(message, lanBaseUrl), message).toBe("extended");
+    }
+  });
+
+  it("grants the extended budget for ECONNREFUSED on a non-loopback LAN host (mid-reboot)", () => {
+    const message = "Connection error. (fetch failed -> ECONNREFUSED connect 192.168.1.50:8080)";
+    expect(classifyHostRetry(message, lanBaseUrl)).toBe("extended");
+  });
+
+  it("classifies ECONNREFUSED on loopback as loopback_refused (server just isn't running)", () => {
+    const message = "Connection error. (fetch failed -> ECONNREFUSED connect 127.0.0.1:1234)";
+    expect(classifyHostRetry(message, loopbackBaseUrl)).toBe("loopback_refused");
+  });
+
+  it("never grants any host-unavailable class against a remote base URL", () => {
+    const messages = [
+      "Connection error. (fetch failed -> EHOSTDOWN connect 192.168.1.50:8080)",
+      "Connection error. (fetch failed -> ECONNREFUSED connect 127.0.0.1:1234)",
+      "Connection error. (fetch failed -> ETIMEDOUT connect 192.168.1.50:8080)",
+    ];
+    for (const message of messages) {
+      expect(classifyHostRetry(message, remoteBaseUrl), message).toBe("none");
     }
   });
 
@@ -72,11 +107,22 @@ describe("isHostUnavailableError", () => {
       "401 Unauthorized: invalid api key",
       "400 Bad Request: context length exceeded",
       "rate limit exceeded",
-      "Connection error. (fetch failed -> ETIMEDOUT connect 192.168.1.50:8080)",
     ];
     for (const message of nonMatching) {
-      expect(isHostUnavailableError(message, localBaseUrl), message).toBe(false);
+      expect(classifyHostRetry(message, lanBaseUrl), message).toBe("none");
+      expect(classifyHostRetry(message, loopbackBaseUrl), message).toBe("none");
     }
+  });
+});
+
+describe("describeBaseUrlHost", () => {
+  it("returns host:port for a URL with an explicit port", () => {
+    expect(describeBaseUrlHost("http://127.0.0.1:1234/v1")).toBe("127.0.0.1:1234");
+  });
+
+  it("falls back to the raw baseUrl or a generic label when it cannot parse", () => {
+    expect(describeBaseUrlHost("not-a-url")).toBe("not-a-url");
+    expect(describeBaseUrlHost(undefined)).toBe("the configured host");
   });
 });
 

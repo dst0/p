@@ -1,6 +1,6 @@
 import { fauxAssistantMessage } from "@dst0/p-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { computeHostUnavailableMaxAttempts } from "../../src/core/agent-session/constants.ts";
+import { computeHostUnavailableMaxAttempts } from "../../src/core/agent-session/host-retry-classification.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const HOST_UNAVAILABLE_ERROR = "Connection error. (fetch failed -> EHOSTDOWN connect 192.168.1.50:8080)";
@@ -84,6 +84,62 @@ describe("host-unavailable retry budget", () => {
       { maxAttempts: 3, reason: "transient" },
     ]);
     expect(harness.faux.state.callCount).toBe(4);
+  });
+
+  it("keeps the normal budget and adds a hint for ECONNREFUSED on loopback (server not running)", async () => {
+    // Default faux model baseUrl is http://localhost:0 -- loopback.
+    const harness = await createHarness({
+      completionMode: "implicit",
+      settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } },
+    });
+    harnesses.push(harness);
+    const refusedMessage = "Connection error. (fetch failed -> ECONNREFUSED connect 127.0.0.1:1234)";
+
+    const retryStarts: Array<{ maxAttempts: number; reason: string }> = [];
+    harness.session.subscribe((event) => {
+      if (event.type === "auto_retry_start") {
+        retryStarts.push({ maxAttempts: event.maxAttempts, reason: event.reason });
+      }
+    });
+
+    harness.setResponses([
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: refusedMessage }),
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: refusedMessage }),
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: refusedMessage }),
+    ]);
+
+    await harness.session.prompt("test");
+
+    expect(retryStarts).toEqual([
+      { maxAttempts: 2, reason: "local_server_down" },
+      { maxAttempts: 2, reason: "local_server_down" },
+    ]);
+    const finalError = harness.eventsOfType("auto_retry_end").at(-1)?.finalError;
+    expect(finalError).toContain("localhost:0 is not running");
+  });
+
+  it("extends the budget for ECONNREFUSED against a non-loopback LAN host (mid-reboot)", async () => {
+    const harness = await createHarness({
+      completionMode: "implicit",
+      settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 500 } },
+    });
+    harnesses.push(harness);
+    harness.session.agent.state.model = { ...harness.getModel(), baseUrl: "http://192.168.1.50:8080/v1" };
+    const refusedMessage = "Connection error. (fetch failed -> ECONNREFUSED connect 192.168.1.50:8080)";
+
+    const retryStarts: Array<{ maxAttempts: number; reason: string }> = [];
+    harness.session.subscribe((event) => {
+      if (event.type === "auto_retry_start") {
+        retryStarts.push({ maxAttempts: event.maxAttempts, reason: event.reason });
+      }
+    });
+
+    harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: refusedMessage })]);
+
+    await harness.session.prompt("test");
+
+    const expectedMaxAttempts = computeHostUnavailableMaxAttempts(500, 600_000);
+    expect(retryStarts).toEqual([{ maxAttempts: expectedMaxAttempts, reason: "host_unavailable" }]);
   });
 
   it("never grants the extended budget for auth or context-length errors on a local host", async () => {
