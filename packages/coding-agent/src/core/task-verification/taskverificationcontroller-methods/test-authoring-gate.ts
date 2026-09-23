@@ -89,12 +89,12 @@ export async function settleWorkspaceTestMutations(
 ): Promise<{ guidance?: string; mutated: boolean }> {
   const captured = self.workspaceTestSnapshots.has(context.toolCall.id);
   const before = self.workspaceTestSnapshots.get(context.toolCall.id);
-  const potentialMutation = self.activeMutationAttempts.has(context.toolCall.id);
   self.workspaceTestSnapshots.delete(context.toolCall.id);
   if (!captured) return { mutated: false };
   const after = await captureTestWorkspaceSnapshot(self.sessionManager.getCwd());
   if (!before || !after) {
-    if (!detectedMutation && !potentialMutation) return { mutated: false };
+    // An unbounded snapshot creates test debt only for a detected mutation, never for a mere attempt.
+    if (!detectedMutation) return { mutated: false };
     self.state = { ...self.state, unverifiedTestPathOverflow: true };
     return {
       guidance:

@@ -64,11 +64,8 @@ export async function do_afterToolCall(
   const initialMutation = workspaceEffect ? await self.detectMutation(context, nativeIsError) : false;
   const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
   const sourceMutation = await settleSourceWorkspaceMutation(self, context);
-  const workspaceMutation =
-    initialMutation ||
-    testAuthoring.workspaceMutated ||
-    sourceMutation.paths.length > 0 ||
-    sourceMutation.trackingFailed;
+  // A failed source snapshot is recorded only alongside a detected mutation, not for a mere attempt.
+  const workspaceMutation = initialMutation || testAuthoring.workspaceMutated || sourceMutation.paths.length > 0;
   const detectedMutation = workspaceMutation || successfulExternalEffect;
   if (detectedMutation) {
     self.rejectedRequirementDefinitionDraft = undefined;

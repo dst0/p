@@ -12,8 +12,11 @@ import type {
 } from "@dst0/p-ai";
 import type { Static, TSchema } from "typebox";
 import type { CompletionMode, CompletionProtocolLimits, FinishWorkPayload } from "./completion-protocol.ts";
+import type { AgentLoopTurnUpdate, PrepareNextTurnContext, ShouldStopAfterTurnContext } from "./loop-turn-hooks.ts";
 import type { ModelCallPreparationConfig } from "./model-call-preparation.ts";
 import type { ResolvedToolEffect, ToolEffectDeclaration } from "./tool-effects.ts";
+
+export type { AgentLoopTurnUpdate, PrepareNextTurnContext, ShouldStopAfterTurnContext } from "./loop-turn-hooks.ts";
 
 /**
  * Stream function used by the agent loop.
@@ -117,35 +120,6 @@ export interface AfterToolCallContext {
   context: AgentContext;
 }
 
-/** Context passed to `shouldStopAfterTurn`. */
-export interface ShouldStopAfterTurnContext {
-  /** The assistant message that completed the turn. */
-  message: AssistantMessage;
-  /** Tool result messages passed to the preceding `turn_end` event. */
-  toolResults: ToolResultMessage[];
-  /** Current agent context after the turn's assistant message and tool results have been appended. */
-  context: AgentContext;
-  /** Messages that this loop invocation will return if it exits at this point. Prompt runs include the initial prompt messages; continuation runs do not include pre-existing context messages. */
-  newMessages: AgentMessage[];
-}
-
-/** Replacement runtime state used by the agent loop before starting another provider request. */
-export interface AgentLoopTurnUpdate {
-  /** Context for the next provider request. */
-  context?: AgentContext;
-  /** Model for the next provider request. */
-  model?: Model<any>;
-  /** Thinking level for the next provider request. */
-  thinkingLevel?: ThinkingLevel;
-  /**
-   * Messages to append after the completed turn and before the next provider request.
-   * The loop emits normal message lifecycle events for these messages so stateful
-   * wrappers can persist them and later requests retain an exact cacheable prefix.
-   */
-  appendMessages?: AgentMessage[];
-}
-
-export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}
 export interface AgentLoopConfig extends ModelCallPreparationConfig {
   model: Model<any>;
 
@@ -192,6 +166,12 @@ export interface AgentLoopConfig extends ModelCallPreparationConfig {
 
   /** Safety limits for explicit and hybrid completion modes. */
   completionLimits?: CompletionProtocolLimits;
+
+  /**
+   * Called when an explicit or hybrid protocol would repair a non-empty text-only answer, with the number of
+   * missing-finish repairs already issued since the last progress. Return true to accept the answer as the end of the run.
+   */
+  allowImplicitCompletion?: (context: { missingFinishRetries: number }) => boolean;
 
   /**
    * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.

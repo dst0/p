@@ -4,14 +4,14 @@ import { parseRunBudgetArgument, type RunBudgetPolicy } from "../core/run-budget
 import {
   COMPLETION_MODE_LABELS,
   isProjectInstructionMode,
-  isTaskVerificationMode,
+  isTaskVerificationSelection,
   isValidThinkingLevel,
   PROJECT_INSTRUCTION_MODES,
   type ProjectInstructionDeliveryMode,
   parseCompletionMode,
   parsePositiveIntegerFlag,
-  TASK_VERIFICATION_MODES,
-  type TaskVerificationMode,
+  TASK_VERIFICATION_SELECTIONS,
+  type TaskVerificationSelection,
 } from "./argument-values.ts";
 
 export { printHelp } from "./args-help.ts";
@@ -29,7 +29,7 @@ export interface Args {
   runBudget?: RunBudgetPolicy;
   completionMode?: CompletionMode;
   projectInstructionMode?: ProjectInstructionDeliveryMode;
-  taskVerificationMode?: TaskVerificationMode;
+  taskVerificationMode?: TaskVerificationSelection;
   projectInstructionCompilerModel?: string;
   continue?: boolean;
   resume?: boolean;
@@ -190,14 +190,14 @@ export function parseArgs(args: string[]): Args {
       } else result.projectInstructionCompilerModel = args[++i];
     } else if (arg === "--task-verification") {
       const mode = args[i + 1];
-      if (mode && !mode.startsWith("-") && isTaskVerificationMode(mode)) {
+      if (mode && !mode.startsWith("-") && isTaskVerificationSelection(mode)) {
         result.taskVerificationMode = mode;
         i++;
       } else {
         if (mode && !mode.startsWith("-")) i++;
         result.diagnostics.push({
           type: "error",
-          message: `--task-verification requires one of: ${TASK_VERIFICATION_MODES.join(", ")}`,
+          message: `--task-verification requires one of: ${TASK_VERIFICATION_SELECTIONS.join(", ")}`,
         });
       }
     } else if (arg === "--completion-mode" && i + 1 < args.length) {

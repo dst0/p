@@ -25,7 +25,7 @@ describe("AgentSession dynamic tool registration", () => {
     }
   });
 
-  it("defaults coding-agent sessions to explicit_finish with finish_work in the system prompt", async () => {
+  it("uses explicit_finish with finish_work in the system prompt under strict verification", async () => {
     const settingsManager = SettingsManager.create(tempDir, agentDir);
     const sessionManager = SessionManager.inMemory();
     const resourceLoader = new DefaultResourceLoader({
@@ -42,6 +42,7 @@ describe("AgentSession dynamic tool registration", () => {
       settingsManager,
       sessionManager,
       resourceLoader,
+      taskVerificationMode: "strict",
     });
     await session.bindExtensions({});
 

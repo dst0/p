@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Default to the adaptive `auto` verification policy: questions and docs edits run in a LIGHT tier with a small prompt and plain-text completion, and code-and-test work escalates to STRICT evidence through the task prior, `begin_code_task`, or the first source, test, or build-config change."
+}

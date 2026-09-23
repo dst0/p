@@ -58,6 +58,7 @@ function createSession(options: {
       getCwd: () => "/tmp/project",
     },
     getContextUsage: () => ({ contextWindow: 200_000, percent: 12.3 }),
+    getVerificationTierStatus: () => undefined,
     modelRegistry: {
       isUsingOAuth: () => false,
     },
@@ -405,16 +406,14 @@ describe("FooterComponent width handling", () => {
 
   it("falls back to loading/sending/switch progress model when state.model is undefined on wide screen", () => {
     const session = {
-      state: {
-        model: undefined,
-        thinkingLevel: "off",
-      },
+      state: { model: undefined, thinkingLevel: "off" },
       sessionManager: {
         getEntries: () => [],
         getSessionName: () => "",
         getCwd: () => "/tmp/project",
       },
       getContextUsage: () => undefined,
+      getVerificationTierStatus: () => undefined,
       modelRegistry: {
         isUsingOAuth: () => false,
       },

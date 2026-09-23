@@ -8,8 +8,10 @@ import { LearningsStore } from "./learnings/learnings-store.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 import { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
-import { formatTaskVerificationGuideline } from "./system-prompt/task-verification-guidance.ts";
+import { formatLightDocsPointer, LIGHT_GUIDELINES } from "./system-prompt/light-guidelines.ts";
+import { strictGuidelines } from "./system-prompt/strict-guidelines.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
+import type { VerificationTier } from "./task-verification/task-tier.ts";
 
 export { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 export { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
@@ -37,6 +39,10 @@ export interface BuildSystemPromptOptions {
   completionMode?: CompletionMode;
   /** Evidence policy to describe in completion guidance. */
   taskVerificationMode?: TaskVerificationMode;
+  /** LIGHT uses short guidelines and no completion ceremony; omitted means the full prompt. */
+  verificationTier?: VerificationTier;
+  /** Auto policy: a task that changes nothing may end with plain text even in explicit mode. */
+  zeroEffectTextCompletion?: boolean;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -53,12 +59,18 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     projectInstructions,
     completionMode,
     taskVerificationMode,
+    verificationTier,
+    zeroEffectTextCompletion,
   } = options;
   const resolvedCwd = cwd;
   const promptCwd = resolvedCwd.replace(/\\/g, "/");
 
   const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
-  const completionProtocolSection = formatCompletionProtocolInstructions(completionMode, taskVerificationMode);
+  const completionProtocolSection = formatCompletionProtocolInstructions(
+    completionMode,
+    taskVerificationMode,
+    zeroEffectTextCompletion,
+  );
   const completionSection = completionProtocolSection ? `\n\n${completionProtocolSection}` : "";
 
   const contextFiles = providedContextFiles ?? [];
@@ -154,37 +166,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     }
   }
 
-  addGuideline("Be concise and show file paths clearly.");
-  addGuideline(
-    "End created or edited text files (including source, JSON/JSONL, Markdown, and config files) with '\\n' unless explicitly requested otherwise.",
-  );
-
   const hasWebResearch = tools.some((toolName) => /(?:web|browser|fetch|curl)/iu.test(toolName));
-  if (hasWebResearch) {
-    addGuideline("For unfamiliar or time-sensitive claims, use available web tools and prefer authoritative sources.");
-  }
-  addGuideline(
-    "Plan the smallest complete outcome that satisfies the request. Establish a baseline when relevant, verify each meaningful increment, fix failures before expanding, and finish required checks and deliverables before optional work.",
-  );
-  addGuideline(
-    "Preserve declared transaction, rollback, irreversibility, and append-only semantics. Never invent rollback for irreversible effects or rewrite audit history; when rollback is required, restore only contract-declared reversible state.",
-  );
-  addGuideline(formatTaskVerificationGuideline(taskVerificationMode));
-  addGuideline(
-    "Preserve exact requested formats and boundaries. When whitespace, framing, ordering, units, or byte-level representation is material, verify the raw artifact rather than an implicitly normalized view.",
-  );
-  addGuideline(
-    "For implementation changes, run the relevant static checks and focused tests plus any broader checks the user or project requires. Distinguish focused evidence from full-suite evidence and fix failures caused by the change.",
-  );
-  addGuideline(
-    "When fixing tests or compiler errors, prefer precise edit calls on failing logic over whole-file write calls; preserve verified invariants and avoid collateral regressions.",
-  );
-  addGuideline(
-    "Use compact, high-signal tool output and preserve full logs outside model context when needed. Treat exit status as authoritative and never mask a failed operation with trailing success output.",
-  );
-  addGuideline(
-    "For complex testing, architecture, or ecosystem integrations, consult loaded specialized skills for domain playbooks and reference patterns.",
-  );
+  const tierGuidelines =
+    verificationTier === "light" ? LIGHT_GUIDELINES : strictGuidelines(taskVerificationMode, hasWebResearch);
+  for (const guideline of tierGuidelines) addGuideline(guideline);
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
@@ -198,12 +183,16 @@ Other project-specific custom tools may also be available.
 Guidelines:
 ${guidelines}
 
-p documentation (read only for questions or work about p, its SDK, extensions, themes, skills, or TUI):
+${
+  verificationTier === "light"
+    ? formatLightDocsPointer(readmePath, docsPath)
+    : `p documentation (read only for questions or work about p, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
 - Resolve docs/... under Additional docs and examples/... under Examples, not cwd
-- Before answering p questions or performing p work, read relevant .md files completely, inspect relevant examples, and follow their .md cross-references`;
+- Before answering p questions or performing p work, read relevant .md files completely, inspect relevant examples, and follow their .md cross-references`
+}`;
 
   if (appendSection) {
     prompt += appendSection;

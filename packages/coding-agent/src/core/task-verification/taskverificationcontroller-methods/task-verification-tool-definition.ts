@@ -47,12 +47,18 @@ export function createTaskVerificationToolDefinition(
   };
 }
 
+/** Zero-effect ceremony that the auto policy drops: those tasks may end with plain text. */
+export const ZERO_EFFECT_EVIDENCE_GUIDELINES: readonly string[] = [
+  'When zero-effect completion reports unclassified requested intent, call action "declare_task" once with the dominant effect. Use task_kind "investigation" only for a user-visible answer with no workspace or external effect; the same-prompt declaration cannot be changed.',
+  'For a response-only task, record exactly one completion_checklist after discovery and before finish_work, set verification_scope to "response_only", and do not call ready_to_finish.',
+];
+
 function evidenceGuidelines(): string[] {
   return [
     `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" after compaction or whenever the completion gate is unclear.`,
-    'When zero-effect completion reports unclassified requested intent, call action "declare_task" once with the dominant effect. Use task_kind "investigation" only for a user-visible answer with no workspace or external effect; the same-prompt declaration cannot be changed.',
+    ZERO_EFFECT_EVIDENCE_GUIDELINES[0]!,
     "After discovery and before the first workspace, external, or publication mutation, record exactly one concise completion_checklist of observable requested outcomes and failure boundaries. Batch that tool call immediately before the first mutation when possible.",
-    'For a response-only task, record exactly one completion_checklist after discovery and before finish_work, set verification_scope to "response_only", and do not call ready_to_finish.',
+    ZERO_EFFECT_EVIDENCE_GUIDELINES[1]!,
     'Set verification_scope from requested effects, not prompt language: "runtime_behavior" for executable behavior, "non_runtime_content" for documents/reports/static artifacts, "external_operation" for sends/schedules/approvals, and "response_only" only for a user-visible answer with no workspace or external effect. Omission is fail-closed runtime behavior.',
     "The checklist is not a clause matrix: group related behavior, omit clause IDs, and keep test commands, typechecks, builds, and generic file completeness as evidence rather than acceptance behavior.",
     "Before submitting the checklist, reread the user request and authoritative sources once. Within each selected behavior or failure boundary, preserve explicit qualifiers such as exactly/only/all, order, cardinality, atomicity, approval, timing, and named rejection boundaries; the controller does not reconstruct an exhaustive free-text clause matrix.",

@@ -22,6 +22,7 @@ export async function prepareAgentNextTurn(
   const nextConfig = {
     ...config,
     model: snapshot.model ?? config.model,
+    completionMode: snapshot.completionMode ?? config.completionMode,
     reasoning:
       snapshot.thinkingLevel === undefined
         ? config.reasoning

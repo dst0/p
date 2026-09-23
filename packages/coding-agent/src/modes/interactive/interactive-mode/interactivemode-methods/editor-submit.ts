@@ -1,5 +1,6 @@
 import type { InteractiveMode } from "../interactivemode.ts";
 import { handleBudgetCommand } from "./budget-command.ts";
+import { handleVerifyCommand } from "./verify-command.ts";
 
 export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
   self.defaultEditor.onSubmit = async (text: string) => {
@@ -14,6 +15,11 @@ export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
     if (text === "/budget" || text.startsWith("/budget ")) {
       self.editor.setText("");
       await handleBudgetCommand(self, text);
+      return;
+    }
+    if (text === "/verify" || text.startsWith("/verify ")) {
+      self.editor.setText("");
+      handleVerifyCommand(self, text);
       return;
     }
     if (text === "/settings") {

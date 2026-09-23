@@ -8,15 +8,21 @@ export interface TaskOwnedPathBaseline {
 }
 
 export const WORKSPACE_EFFECT_SKIPPED_SEGMENTS: readonly string[] = Object.freeze([
+  ".cache",
   ".git",
+  ".gradle",
+  ".next",
   ".pdev",
   ".p",
   ".pi",
   ".pnpm-store",
+  ".tox",
+  ".venv",
   "coverage",
   "dist",
   "node_modules",
   "target",
+  "venv",
 ]);
 // Pre-compiled regex avoids array allocations from .split('/') on every path check
 const SKIPPED_SEGMENTS_PATTERN = new RegExp(

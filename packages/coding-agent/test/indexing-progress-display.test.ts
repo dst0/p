@@ -32,6 +32,7 @@ function createSession(): AgentSession {
     sessionManager: { getEntries: () => [], getCwd: () => "/tmp/project", getSessionName: () => undefined },
     modelRegistry: { isUsingOAuth: () => false },
     getContextUsage: () => undefined,
+    getVerificationTierStatus: () => undefined,
   } as unknown as AgentSession;
 }
 

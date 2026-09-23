@@ -27,6 +27,8 @@ import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { TaskVerificationMode } from "../task-verification/mode.ts";
+import type { VerificationTier, VerificationTierReason } from "../task-verification/task-tier.ts";
+import type { TaskVerificationPolicy } from "../task-verification/verification-policy.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 
 export interface ToolSearchMatch {
@@ -69,6 +71,14 @@ export type AgentSessionEvent =
   | { type: "interaction_mode_changed"; mode: InteractionMode }
   | { type: "project_instructions_fallback"; message: string }
   | { type: "project_instructions_restored"; message: string }
+  | {
+      type: "verification_tier_changed";
+      policy: TaskVerificationPolicy;
+      tier: VerificationTier;
+      previousTier: VerificationTier;
+      reason: VerificationTierReason;
+      trigger?: string;
+    }
   | {
       type: "compaction_end";
       reason: "manual" | "threshold" | "overflow";

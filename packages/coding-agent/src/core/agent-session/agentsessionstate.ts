@@ -98,6 +98,8 @@ export class AgentSessionState {
   public _completionMode: CompletionMode;
   public _taskVerificationMode: TaskVerificationMode;
   public _taskVerificationRuntime?: InstalledTaskVerificationRuntime;
+  /** Settings-level verification `off`: no controller, lightweight prompt and tools. */
+  public _verificationPolicyOff = false;
   public _interactionMode: InteractionMode = "normal";
   public _planModePreviousActiveToolNames: string[] | undefined;
   public _stateUpdateRequiredForCurrentUserTurn = false;

@@ -5,6 +5,13 @@ import type { ToolDefinition } from "./extensions/index.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
+import { LIGHT_DEFERRED_TOOL_NAMES } from "./task-verification/task-tier.ts";
+import {
+  resolveTaskVerificationConfiguration,
+  type TaskVerificationConfiguration,
+  type TaskVerificationSelection,
+  taskVerificationEngineMode,
+} from "./task-verification/verification-policy.ts";
 import {
   finalizeTaskVerificationCompletion,
   taskVerificationFinalizerBatchError,
@@ -15,10 +22,15 @@ import {
   REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_TOOL_NAME,
 } from "./task-verification.ts";
+import { beginCodeTask } from "./task-verification-begin-code-task.ts";
 import { resolveTaskVerificationSessionPolicy } from "./task-verification-session-policy.ts";
+import { observeVerificationTierEffect } from "./task-verification-tier-effects.ts";
+import { TASK_VERIFICATION_TIER_CUSTOM_TYPE, TaskVerificationTierRuntime } from "./task-verification-tier-runtime.ts";
+import { installVerificationOff, installVerificationTier } from "./task-verification-tier-session.ts";
+import { BEGIN_CODE_TASK_TOOL_NAME, createBeginCodeTaskToolDefinition } from "./tools/begin-code-task.ts";
 
 interface TaskVerificationRuntimeOptions {
-  taskVerificationMode?: TaskVerificationMode;
+  taskVerificationMode?: TaskVerificationSelection;
   completionMode?: CompletionMode;
   tools?: string[];
   excludeTools?: string[];
@@ -27,15 +39,24 @@ interface TaskVerificationRuntimeOptions {
   activeToolEffects: readonly ResolvedToolEffect[];
 }
 
-export interface PreparedTaskVerificationRuntime {
+interface PreparedTaskVerificationRuntimeBase {
   completionMode: CompletionMode;
+  /** Whether the completion mode came from an explicit option or setting rather than the default. */
+  completionModeExplicit: boolean;
+  /** Engine mode enforced by the initial tier; `off` while LIGHT. */
   effectiveMode: TaskVerificationMode;
+  configuration: TaskVerificationConfiguration;
   tools?: string[];
   customTools?: ToolDefinition[];
-  controller?: TaskVerificationController;
   requiredToolNames: string[];
   toolDefinitions: ToolDefinition[];
 }
+
+export type PreparedTaskVerificationRuntime = PreparedTaskVerificationRuntimeBase &
+  (
+    | { controller: TaskVerificationController; tier: TaskVerificationTierRuntime }
+    | { controller?: undefined; tier?: undefined }
+  );
 
 function addToolNames(toolNames: string[] | undefined, requiredToolNames: string[]): string[] | undefined {
   if (!toolNames) return undefined;
@@ -50,7 +71,7 @@ function addToolDefinitions(
 }
 
 export function assertReservedTaskVerificationToolNames(tools: Iterable<Pick<ToolDefinition, "name">>): void {
-  const reservedNames = new Set([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME]);
+  const reservedNames = new Set([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME, BEGIN_CODE_TASK_TOOL_NAME]);
   for (const tool of tools) {
     if (reservedNames.has(tool.name)) {
       throw new Error(`${tool.name} is reserved by the built-in verification controller`);
@@ -61,6 +82,7 @@ export function assertReservedTaskVerificationToolNames(tools: Iterable<Pick<Too
 function createVerificationToolDefinitions(
   controller: TaskVerificationController,
   mode: TaskVerificationMode,
+  tier: TaskVerificationTierRuntime,
 ): ToolDefinition[] {
   const controlPlaneEffect = { kind: "read" as const, risk: "normal" as const };
   return [
@@ -68,7 +90,20 @@ function createVerificationToolDefinitions(
     ...(mode === "audit"
       ? [{ ...controller.requirementAuditToolDefinition, effect: controlPlaneEffect, promptSnippet: undefined }]
       : []),
+    createBeginCodeTaskToolDefinition((input) => beginCodeTask(tier, controller, input)) as unknown as ToolDefinition,
   ];
+}
+
+function createTierRuntime(
+  configuration: TaskVerificationConfiguration,
+  sessionManager: SessionManager,
+): TaskVerificationTierRuntime {
+  const tier = new TaskVerificationTierRuntime({
+    configuredPolicy: configuration.policy,
+    persist: (entry) => sessionManager.appendCustomEntry(TASK_VERIFICATION_TIER_CUSTOM_TYPE, entry),
+  });
+  tier.restore(sessionManager.getBranch());
+  return tier;
 }
 
 export function prepareTaskVerificationRuntime(
@@ -77,30 +112,53 @@ export function prepareTaskVerificationRuntime(
   settingsManager: SettingsManager,
 ): PreparedTaskVerificationRuntime {
   assertReservedTaskVerificationToolNames(options.customTools ?? []);
-  const configuredMode = options.taskVerificationMode ?? settingsManager.getTaskVerificationMode();
+  const configuration = resolveTaskVerificationConfiguration(
+    options.taskVerificationMode,
+    settingsManager.getTaskVerificationConfiguration(),
+  );
+  const configuredMode = taskVerificationEngineMode(configuration);
   const policy = resolveTaskVerificationSessionPolicy({
     mode: configuredMode,
     activeToolEffects: options.activeToolEffects,
     excludeTools: options.excludeTools,
     allowReadOnlyEvidence: options.tools === undefined && options.noTools !== "all",
   });
-  const completionMode = options.completionMode ?? settingsManager.getCompletionMode();
-  if (configuredMode !== "off" && completionMode !== "explicit_finish") {
-    throw new Error(`Task verification mode "${configuredMode}" requires explicit_finish completion mode`);
+  // Verification off is the lightest protocol: without an explicit choice, a text answer ends the run.
+  const completionModeExplicit =
+    options.completionMode !== undefined || settingsManager.settings.completionMode !== undefined;
+  const defaultsToImplicit = configuredMode === "off" && !completionModeExplicit;
+  const completionMode =
+    options.completionMode ?? (defaultsToImplicit ? "implicit" : settingsManager.getCompletionMode());
+  if (configuredMode !== "off" && configuration.policy !== "light" && completionMode !== "explicit_finish") {
+    throw new Error(`Task verification policy "${configuration.policy}" requires explicit_finish completion mode`);
   }
-  const effectiveMode = policy.enabled ? configuredMode : "off";
-  const controller =
-    configuredMode === "off" ? undefined : createTaskVerificationController(sessionManager, configuredMode);
-  const toolDefinitions = controller ? createVerificationToolDefinitions(controller, configuredMode) : [];
+  if (configuredMode === "off") {
+    return {
+      completionMode,
+      completionModeExplicit,
+      effectiveMode: "off",
+      configuration,
+      tools: addToolNames(options.tools, []),
+      customTools: options.customTools,
+      requiredToolNames: policy.requiredToolNames,
+      toolDefinitions: [],
+    };
+  }
+  const controller = createTaskVerificationController(sessionManager, configuredMode);
+  const tier = createTierRuntime(configuration, sessionManager);
+  const toolDefinitions = createVerificationToolDefinitions(controller, configuredMode, tier);
   return {
     completionMode,
-    effectiveMode,
+    completionModeExplicit,
+    effectiveMode: policy.enabled && tier.tier === "strict" ? configuredMode : "off",
+    configuration,
     tools: addToolNames(
       options.tools,
       toolDefinitions.map((definition) => definition.name),
     ),
-    customTools: controller ? addToolDefinitions(options.customTools, toolDefinitions) : options.customTools,
+    customTools: addToolDefinitions(options.customTools, toolDefinitions),
     controller,
+    tier,
     requiredToolNames: policy.requiredToolNames,
     toolDefinitions,
   };
@@ -125,11 +183,16 @@ export function reconcileTaskVerificationRuntime(session: AgentSession, requeste
     retainVerification: controllerLifecycleIsPending(runtime),
     allowReadOnlyEvidence: session._allowedToolNames === undefined,
   });
-  runtime.enabled = policy.enabled;
-  session._taskVerificationMode = policy.enabled ? runtime.configuredMode : "off";
-  return policy.enabled
-    ? [...new Set([...nonVerificationToolNames, ...policy.requiredToolNames])]
-    : nonVerificationToolNames;
+  const tier = runtime.tier;
+  runtime.enabled = policy.enabled && tier.policy !== "off";
+  const enforcing = runtime.enabled && tier.tier === "strict";
+  runtime.controller.observeOnly = !enforcing;
+  runtime.controller.relaxedZeroEffectCompletion = tier.policy === "auto";
+  session._taskVerificationMode = enforcing ? runtime.configuredMode : "off";
+  if (enforcing) return [...new Set([...nonVerificationToolNames, ...policy.requiredToolNames])];
+  const offerEscalation =
+    runtime.enabled && tier.escalationEnabled && session._toolRegistry.has(BEGIN_CODE_TASK_TOOL_NAME);
+  return offerEscalation ? [...nonVerificationToolNames, BEGIN_CODE_TASK_TOOL_NAME] : nonVerificationToolNames;
 }
 
 function installControllerHookGate(session: AgentSession, runtime: InstalledTaskVerificationRuntime): void {
@@ -145,18 +208,15 @@ function installControllerHookGate(session: AgentSession, runtime: InstalledTask
     return await controlledBeforeToolCall?.(context, signal);
   };
   session.agent.afterToolCall = async (context, signal) => {
-    const result = runtime.enabled
-      ? await controlledAfterToolCall?.(context, signal)
-      : await nativeAfterToolCall?.(context, signal);
-    const verifiedCompletion = runtime.enabled
-      ? finalizeTaskVerificationCompletion(session, runtime, context, result)
-      : undefined;
+    if (!runtime.enabled) return await nativeAfterToolCall?.(context, signal);
+    const result = await controlledAfterToolCall?.(context, signal);
+    const verifiedCompletion = finalizeTaskVerificationCompletion(session, runtime, context, result);
+    observeVerificationTierEffect(runtime, context, result?.isError ?? context.isError, session._cwd);
     if (verifiedCompletion) {
       session.setActiveToolsByName(session.getActiveToolNames());
       return verifiedCompletion;
     }
     if (
-      runtime.enabled &&
       context.toolCall.name === "finish_work" &&
       !(
         (result?.isError ?? context.isError) ||
@@ -171,17 +231,28 @@ function installControllerHookGate(session: AgentSession, runtime: InstalledTask
 }
 
 export function installTaskVerificationRuntime(session: AgentSession, runtime: PreparedTaskVerificationRuntime): void {
-  if (!runtime.controller) return;
+  if (!runtime.controller) {
+    if (runtime.configuration.policy === "off") installVerificationOff(session);
+    return;
+  }
   for (const definition of runtime.toolDefinitions) {
     session._projectRuleSafeToolDefinitions.add(definition);
   }
+  const activeToolNames = session.getActiveToolNames();
   const installedRuntime: InstalledTaskVerificationRuntime = {
     configuredMode: runtime.controller.mode as Exclude<TaskVerificationMode, "off">,
     controller: runtime.controller,
     enabled: runtime.effectiveMode !== "off",
     managedToolNames: new Set(runtime.toolDefinitions.map((definition) => definition.name)),
+    tier: runtime.tier,
+    completionModeExplicit: runtime.completionModeExplicit,
+    tierManagedToolNames:
+      session._allowedToolNames === undefined
+        ? LIGHT_DEFERRED_TOOL_NAMES.filter((name) => activeToolNames.includes(name))
+        : [],
+    observedLedger: { ownedPaths: new Set(), sourcePaths: new Set(), mutationRevision: 0 },
   };
   session._taskVerificationRuntime = installedRuntime;
   installControllerHookGate(session, installedRuntime);
-  session.setActiveToolsByName(session.getActiveToolNames());
+  installVerificationTier(session, installedRuntime);
 }

@@ -1,4 +1,5 @@
 import { stripJsonComments } from "../../../utils/json.ts";
+import { migrateLegacyTaskVerificationMode } from "../../task-verification/verification-policy.ts";
 import type { Settings, SettingsScope, SettingsStorage } from "../types.ts";
 
 export function do_loadFromStorage(storage: SettingsStorage, scope: SettingsScope, projectTrusted = true): Settings {
@@ -78,6 +79,12 @@ export function do_migrateSettings(settings: Record<string, unknown>): Settings 
       };
     }
     delete retrySettings.maxDelayMs;
+  }
+
+  if ("taskVerificationMode" in settings) {
+    const migrated = migrateLegacyTaskVerificationMode(settings.taskVerificationMode);
+    if (migrated && !("taskVerification" in settings)) settings.taskVerification = migrated;
+    delete settings.taskVerificationMode;
   }
 
   return settings as Settings;

@@ -239,11 +239,11 @@ describe("task verification test-authoring bypass resistance", () => {
     }
   });
 
-  it("fails closed when a pathless mutation attempt cannot be snapshotted", async () => {
+  it("fails closed when a detected pathless mutation cannot be snapshotted", async () => {
     const cwd = join(tmpdir(), `p-test-authoring-missing-${Date.now()}`);
     const harness = createRequirementAuditHarness(SessionManager.inMemory(cwd));
     declareTestOnlyTask(harness.controller);
-    const args = { command: "node generator.js" };
+    const args = { command: "touch generated.test.js" };
 
     await invokeBefore(harness.agent, "missing-generator", "bash", args);
     await invokeAfter(harness.agent, "missing-generator", "bash", args, "generator completed");

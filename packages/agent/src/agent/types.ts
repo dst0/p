@@ -4,6 +4,7 @@ import type { PrepareModelCallContext, PrepareModelCallResult } from "../model-c
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
+  AgentLoopConfig,
   AgentLoopTurnUpdate,
   AgentMessage,
   AgentState,
@@ -54,6 +55,7 @@ export interface AgentOptions {
   toolExecution?: ToolExecutionMode;
   completionMode?: CompletionMode;
   completionLimits?: CompletionProtocolLimits;
+  allowImplicitCompletion?: AgentLoopConfig["allowImplicitCompletion"];
 }
 
 export type ActiveRun = {

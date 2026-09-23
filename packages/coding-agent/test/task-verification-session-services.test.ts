@@ -13,6 +13,7 @@ import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification.ts";
+import { BEGIN_CODE_TASK_TOOL_NAME } from "../src/core/tools/begin-code-task.ts";
 
 describe("task verification session wiring", () => {
   let tempDir: string;
@@ -49,9 +50,27 @@ describe("task verification session wiring", () => {
     });
   }
 
-  it("defaults to evidence mode and exposes only record_task_verification", async () => {
+  it("defaults to auto: starts LIGHT with begin_code_task and no verification ceremony", async () => {
     const { session } = await createSession();
     try {
+      expect(session.getVerificationTierStatus()).toMatchObject({ policy: "auto", tier: "light" });
+      expect(session.getActiveToolNames()).toContain(BEGIN_CODE_TASK_TOOL_NAME);
+      expect(session.getActiveToolNames()).not.toContain(TASK_VERIFICATION_TOOL_NAME);
+      expect(session.getActiveToolNames()).not.toContain("update_session_state");
+      expect(session.agent.completionMode).toBe("implicit");
+      expect(session._taskVerificationMode).toBe("off");
+      expect(session.systemPrompt).not.toContain("explicit completion mode");
+      expect(session.agent.beforeToolCall).toBeTypeOf("function");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("forces today's evidence behavior with the legacy evidence selection", async () => {
+    const { session } = await createSession({ taskVerificationMode: "evidence" });
+    try {
+      expect(session.getVerificationTierStatus()).toMatchObject({ policy: "strict", tier: "strict" });
+      expect(session.getActiveToolNames()).not.toContain(BEGIN_CODE_TASK_TOOL_NAME);
       expect(session.getAllTools().map((tool) => tool.name)).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.getAllTools().map((tool) => tool.name)).not.toContain(REQUIREMENT_AUDIT_TOOL_NAME);
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
@@ -74,6 +93,7 @@ describe("task verification session wiring", () => {
       model: getModel("anthropic", "claude-sonnet-4-5")!,
       sessionManager: SessionManager.inMemory(tempDir),
       settingsManager: SettingsManager.create(tempDir, agentDir),
+      taskVerificationMode: "strict",
     });
     try {
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
@@ -155,7 +175,10 @@ describe("task verification session wiring", () => {
   });
 
   it("does not let an irrelevant audit-tool exclusion disable evidence mode", async () => {
-    const { session } = await createSession({ excludeTools: [REQUIREMENT_AUDIT_TOOL_NAME] });
+    const { session } = await createSession({
+      excludeTools: [REQUIREMENT_AUDIT_TOOL_NAME],
+      taskVerificationMode: "strict",
+    });
     try {
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.getActiveToolNames()).not.toContain(REQUIREMENT_AUDIT_TOOL_NAME);
@@ -164,10 +187,21 @@ describe("task verification session wiring", () => {
     }
   });
 
-  it.each(["evidence", "audit"] as const)("requires explicit completion for %s mode", async (mode) => {
+  it.each(["auto", "strict", "evidence", "audit"] as const)("requires explicit completion for %s", async (mode) => {
     await expect(createSession({ completionMode: "implicit", taskVerificationMode: mode })).rejects.toThrow(
-      `Task verification mode "${mode}" requires explicit_finish completion mode`,
+      /Task verification policy "(?:auto|strict)" requires explicit_finish completion mode/,
     );
+  });
+
+  it("lets the light policy run with any completion mode because LIGHT always completes implicitly", async () => {
+    const { session } = await createSession({ completionMode: "implicit", taskVerificationMode: "light" });
+    try {
+      expect(session.getVerificationTierStatus()).toMatchObject({ policy: "light", tier: "light" });
+      expect(session.getActiveToolNames()).not.toContain(BEGIN_CODE_TASK_TOOL_NAME);
+      expect(session.agent.completionMode).toBe("implicit");
+    } finally {
+      session.dispose();
+    }
   });
 
   it("allows implicit completion when verification is off", async () => {
@@ -175,7 +209,7 @@ describe("task verification session wiring", () => {
     session.dispose();
   });
 
-  it.each([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME])(
+  it.each([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME, BEGIN_CODE_TASK_TOOL_NAME])(
     "rejects a custom tool collision with reserved name %s",
     async (name) => {
       await expect(

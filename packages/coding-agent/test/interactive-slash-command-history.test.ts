@@ -24,10 +24,15 @@ function createInteractiveModeContext(): { editor: Editor; mode: InteractiveMode
       isStreaming: false,
       isBashRunning: false,
       prompt: vi.fn(async () => {}),
+      getVerificationTierStatus: vi.fn(() => undefined),
+      setVerificationPolicy: vi.fn(() => undefined),
     },
     flushPendingBashComponents: vi.fn(),
     showStatus: vi.fn(),
+    showWarning: vi.fn(),
     showError: vi.fn(),
+    footer: { invalidate: vi.fn() },
+    ui: { requestRender: vi.fn() },
     createExtensionUIContext: () => ({ select: vi.fn(async () => undefined) }),
     pendingUserInputs: [],
     showSettingsSelector: vi.fn(),
@@ -91,12 +96,23 @@ describe("Interactive slash command prompt history", () => {
     "/memory status",
     "/rules lint",
     "/index status",
+    "/verify strict",
   ])("recalls the complete argument-bearing command %s", async (command) => {
     await expect(submitAndRecall(command)).resolves.toBe(command);
   });
 
   it.each(["/debug", "/arminsayshi", "/dementedelves"])("recalls hidden command %s", async (command) => {
     await expect(submitAndRecall(command)).resolves.toBe(command);
+  });
+
+  it("routes only /verify and /verify <policy> to the verification command", async () => {
+    const { editor, mode } = createInteractiveModeContext();
+    await editor.onSubmit?.("/verifyx now");
+    await editor.onSubmit?.("/verify light");
+
+    expect((mode as unknown as { pendingUserInputs: string[] }).pendingUserInputs).toEqual(["/verifyx now"]);
+    expect(mode.session.setVerificationPolicy).toHaveBeenCalledTimes(1);
+    expect(mode.session.setVerificationPolicy).toHaveBeenCalledWith("light");
   });
 
   it("recalls dynamically registered slash commands through the normal prompt path", async () => {

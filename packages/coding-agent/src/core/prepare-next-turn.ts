@@ -9,6 +9,11 @@ import {
 import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import {
+  applyQueuedVerificationChanges,
+  createVerificationTierNoticeMessage,
+  isLightTierActive,
+} from "./task-verification-tier-session.ts";
+import {
   createSessionStateReminderMessage,
   createTurnCheckpointMessages,
   SESSION_STATE_REMINDER_INTERVAL_MS,
@@ -45,21 +50,31 @@ export function installAgentSessionPrepareNextTurn(
     if (compacted || successfulStateCheck) {
       lastStateCheckAt = now;
     }
+    applyQueuedVerificationChanges(session);
     const state = session.getSessionStateSnapshot().state;
+    const tier = session._taskVerificationRuntime?.tier;
+    const lightTier = isLightTierActive(session);
     const turnCheckpointMessages = nextTurnContext
-      ? createTurnCheckpointMessages(nextTurnContext, state, settingsManager.getCompactionRenderedStateMaxTokens())
+      ? createTurnCheckpointMessages(nextTurnContext, state, settingsManager.getCompactionRenderedStateMaxTokens(), {
+          errorsOnly: lightTier,
+        })
       : [];
     const completedOrdinaryToolWork =
       nextTurnContext?.toolResults.some(
         (result) => !STATE_MAINTENANCE_TOOL_NAMES.has(result.toolName) && result.toolName !== "sleep",
       ) ?? false;
     const reminderDue =
+      !lightTier &&
       completedOrdinaryToolWork &&
       state.plan.some((item) => item.status !== "done") &&
       now - Math.max(lastStateCheckAt, lastReminderAt) >= SESSION_STATE_REMINDER_INTERVAL_MS;
     if (reminderDue) {
       lastReminderAt = now;
       turnCheckpointMessages.push(createSessionStateReminderMessage(now + turnCheckpointMessages.length));
+    }
+    const tierNotice = tier?.takeNotice();
+    if (tierNotice) {
+      turnCheckpointMessages.push(createVerificationTierNoticeMessage(tierNotice, now + turnCheckpointMessages.length));
     }
     const replacementContext: AgentContext = {
       systemPrompt: agent.state.systemPrompt,
@@ -71,6 +86,7 @@ export function installAgentSessionPrepareNextTurn(
       model: agent.state.model,
       thinkingLevel: agent.state.thinkingLevel,
       context: replacementContext,
+      completionMode: agent.completionMode,
       appendMessages: turnCheckpointMessages,
     };
   };

@@ -29,7 +29,7 @@
   },
   "packages/agent/src/types.ts": {
     "classes": 0,
-    "lines": 508
+    "lines": 488
   },
   "packages/agent/test/agent-loop.test.ts": {
     "classes": 1,
@@ -481,7 +481,7 @@
   },
   "packages/coding-agent/test/footer-width.test.ts": {
     "classes": 0,
-    "lines": 432
+    "lines": 431
   },
   "packages/coding-agent/test/git-update.test.ts": {
     "classes": 0,

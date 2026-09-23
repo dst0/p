@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Replace the global `taskVerificationMode` setting with `taskVerification.mode` (`auto`, `light`, `strict`, `off`) and `taskVerification.engine`, accept those values in `--task-verification`, and migrate legacy `evidence` and `audit` settings to `strict`."
+}

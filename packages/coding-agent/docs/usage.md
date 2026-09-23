@@ -74,6 +74,8 @@ Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpM
 
 p defaults to `completionMode: "explicit_finish"`. The agent only treats work as complete after the model calls the terminal tool `finish_work`; a plain assistant response with no tool calls does not end the loop in this mode.
 
+Under the default `auto` [verification tier](#adaptive-verification-tiers), this protocol applies to STRICT code-and-test work. LIGHT tasks, such as questions, reviews, and documentation edits, end on the model's plain-text answer without `finish_work`.
+
 This avoids a common local-model failure mode:
 
 ```text
@@ -100,15 +102,48 @@ finish_work({
 })
 ```
 
+Explicit completion is bounded: after three consecutive text-only answers without `finish_work`, or six consecutive turns without progress, the run stops with a reason that says why. The model's last answer stays visible, and replying continues the task. Successful tool work resets both counts. `completionLimits.maxMissingFinishRetries` and `completionLimits.maxNoProgressTurns` change these limits.
+
 Print mode normally displays `summary`. When a complete text-only answer is followed immediately by the specifically tagged missing-`finish_work` repair and a matching summary-only successful finish, print mode preserves the original answer exactly; intervening work, user steering, new public text, mismatched calls, and partial or failed finishes retain summary precedence. After the active task-verification policy succeeds, the controller can populate an omitted `verification_token`; a supplied token must match exactly. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
+
+### Adaptive verification tiers
+
+Verification effort follows the task. `taskVerification.mode` (global settings), `--task-verification`, and the interactive `/verify` command select one of four policies:
+
+| Policy | Behavior |
+| --- | --- |
+| `auto` (default) | Start LIGHT; escalate to STRICT for code-and-test work. |
+| `light` | Always LIGHT, never escalate. |
+| `strict` | Always STRICT: the evidence engine with explicit `finish_work`, as p behaved before tiers. |
+| `off` | No verification controller. Lighter than LIGHT: the same small tool set without `begin_code_task`, and a text answer ends the run unless `completionMode` is set explicitly. |
+
+`--task-verification evidence` and `--task-verification audit` still work and force STRICT with that engine. The legacy global `taskVerificationMode` setting migrates to `taskVerification`: `evidence` becomes `{ "mode": "strict" }`, `audit` becomes `{ "mode": "strict", "engine": "audit" }`, and `off` stays `off`.
+
+LIGHT keeps the first request small. The system prompt has a short guideline list and no completion protocol, session-state protocol, or subagent catalog. The tool list is `read`, `bash`, `edit`, `write`, `semantic_search`, `tool_search`, `begin_code_task`, and the compiled project-instruction readers. `process`, `sleep`, `update_session_state`, `mark_session_progress`, `session_recall`, and `keep_context` are deferred, and `tool_search` can activate them. A text answer ends the run. p adds turn checkpoints only after failed tool calls and sends no state reminders. When compiled project instructions fall back to legacy delivery, LIGHT keeps the injected AGENTS.md/CLAUDE.md context and still omits the ceremony tools.
+
+In `auto`, three signals switch a task to STRICT:
+
+1. **Deterministic prior.** A new prompt starts STRICT when the requested-effect classifier says an effect is required and the task kind is a bug fix, behavior change, refactor, or feature. "Implement X with tests" starts STRICT; "What does X do?" starts LIGHT.
+2. **Model signal.** The model calls `begin_code_task({ goal, checklist })` in the same response as its first source or test edit. This call records the evidence checklist, so the edit is not blocked.
+3. **Effect backstop.** The first successful change to a source, test, or build-config path escalates. The change can come from `edit` or `write`, from any tool that declares a workspace write, or from a shell command whose workspace snapshot or parsed file arguments show it. An exact target path counts even when it lies outside the working directory, for example in a sibling worktree. A mutation whose paths cannot be tracked, such as a shell write in a workspace too large to snapshot, escalates conservatively. Documentation and other non-code files stay LIGHT. Extension, MCP, and web tools that do not declare a workspace write never escalate, and the LIGHT tier does not record them in the effect ledger. Snapshots skip `.venv`, `venv`, `.tox`, `.cache`, `.gradle`, `.next`, `node_modules`, `dist`, `target`, and `coverage`.
+
+An escalation mid-run restores the STRICT tools and system prompt and switches completion to explicit `finish_work`. For backstop escalations it also appends a short `<verification_tier>` notice. The checklist gate applies from the next change. Under `auto`, a STRICT task that changed nothing needs no checklist or `declare_task`. If the request did not ask for a change, the task ends on a plain-text answer. If it did ask for one ("Fix X"), p repairs the first text-only answer once and rejects a successful `finish_work` that made no change. An accepted zero-effect answer completes the controller task, so its request cannot force repairs on later questions. After a change, the evidence rules below apply.
+
+Each new prompt that is not a nudge ("continue", "status") recomputes the tier. Steering and follow-up messages queued during a run are checked at the next turn boundary and can escalate, but never lower, the tier. To keep the provider's prompt cache warm, an escalated `auto` session stays STRICT for later questions. It returns to LIGHT only after a compaction, a resume, tree navigation, or a policy change, all of which rebuild the prompt anyway. Unverified STRICT work stays in the ledger, so a later code edit escalates again with those paths still owed.
+
+The footer shows what p actually does. It shows `LIGHT`, `STRICT·auto` (escalated under `auto`), or `STRICT` (forced). It shows `OFF` when nothing is verified: policy `off`, or a session whose tools cannot change anything, such as `--tools read`. Such an unverified session ends on the text answer unless a completion mode is set explicitly; forced `strict` keeps its explicit protocol. `/verify` shows the current tier and why it was chosen; `/verify auto|light|strict|off` overrides the policy for the session. An SDK `setVerificationPolicy` call made while a run streams takes effect at the next turn boundary. Tier changes are persisted, so a resumed or compacted session restores its tier, and tree navigation restores the tier of the selected branch.
 
 ### Evidence-backed completion
 
 Task verification is independent from project-instruction delivery and uses the configured completion protocol, except that a successful experimental audit verdict can supply its own runtime-owned terminal transition:
 
 - `--project-instructions compiled|legacy|off` controls how project rules are delivered;
-- `--task-verification evidence|audit|off` controls completion evidence, with `evidence` as the default and `audit` experimental;
-- `--completion-mode explicit_finish|hybrid|implicit` controls how a run terminates.
+- `--task-verification auto|light|strict|off` selects the [verification tier](#adaptive-verification-tiers) policy. `evidence` and `audit` force STRICT with that engine; `audit` is experimental;
+- `--completion-mode explicit_finish|hybrid|implicit` controls how a STRICT or `off` run terminates.
+
+The rest of this section describes the STRICT evidence engine.
+
+A workspace snapshot can fail, for example in a very large directory that is not a repository. Such a failure creates changed-test or path-tracking debt only when a mutation was actually detected: a direct `edit` or `write`, a recognized mutating shell command, or a changed workspace fingerprint. An inspection command whose snapshot fails creates no debt and never requires a broad test run.
 
 In default `evidence` mode, free-form user text produces one concise model-generated behavioral checklist after discovery and before the first mutation. The checklist is frozen for the current substantive prompt and survives implementation, compaction, and evidence refresh; p does not decompose arbitrary prose into an exhaustive clause-to-requirement matrix. The same call declares a language-neutral `verification_scope`: `runtime_behavior` for executable behavior, `non_runtime_content` for documents, reports, and static artifacts, `external_operation` for sends, schedules, approvals, and similar effects, or `response_only` for a user-visible answer with no workspace or external effect. Omission is conservatively treated as `runtime_behavior`, and a same-prompt checklist cannot switch scopes. The controller derives an independent requested-effect intent from affirmative effect clauses, so a known implementation, artifact, or external-action request cannot authorize itself by selecting `response_only`. Wording or languages that cannot be classified fail closed at zero-effect finish and receive one exact `declare_task` repair call; that same-prompt declaration is immutable, persists independently from the checklist, and must use `investigation` for a response-only answer. A later substantive prompt clears both the declaration and checklist. Checklist items must describe observable requested behavior or requested artifact state. Test, typecheck, lint, and build commands remain evidence, so recognized process-only items are removed before checklist resource limits are applied. Read-only discovery and test commands remain available before the checklist is recorded. An explicit read-only or terminal-only tool allowlist stays authoritative and does not acquire the verification control tool merely because a tool is present; an effectful tool selection still activates the evidence guard. Deterministic checks retain authoritative exit status, effect-revision freshness, requested tests and typechecks, changed-test verification, actual changed scope, metadata-only external-effect receipts, and explicitly selected rule-module receipts. A receipt is bound to one immutable receipt ID and one successful tool call. It proves only the exact bounded criterion `External effect [N] via tool TOOL completes successfully` (or the single generic requested-effect form). A semantic remote outcome instead maps the same checklist item to both its write receipt and a later declared readback whose native tool details include bounded `taskVerificationReadback` proof with `version: 1`, `kind: "external_effect_readback"`, `outcome: "confirmed"`, the original `externalEffectToolCallId`, and the exact checklist `criterion`. The controller accepts the proof only when the read and write effects share a non-empty domain, then persists the receipt identity, outcome, and criterion hash rather than connector arguments, payloads, or proof text. A later receipt-and-criterion-bound `outcome: "not_confirmed"` supersedes the earlier confirmation and invalidates readiness even when the readback reports an expanded or narrowed overlapping domain set, but can never prove success. Shell, file, wrong-resource, and unbound reads cannot substitute. All still-eligible receipts and current confirmed readbacks remain visible after compaction. A successful-looking command that is not a recognized direct test invocation does not clear changed-test debt; the result identifies unsupported command wrapping and tells the model to retry the direct invocation.
 
@@ -395,8 +430,11 @@ p --tools read,grep,find,ls -p "Review the code"
 # Disable one extension or built-in tool while keeping the rest available
 p --exclude-tools confirm_user
 
-# Opt out of mandatory finish_work for one run
-p --completion-mode implicit -p "Say exactly: ok"
+# Force today's full evidence protocol for one run (default: auto)
+p --task-verification strict -p "Fix the off-by-one bug in src/range.ts"
+
+# Opt out of task verification and mandatory finish_work for one run
+p --task-verification off --completion-mode implicit -p "Say exactly: ok"
 ```
 
 ### Environment Variables

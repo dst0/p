@@ -3,6 +3,7 @@ import { wrapRegisteredTools } from "../../extensions/index.ts";
 import { createSyntheticSourceInfo } from "../../source-info.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../../task-verification.ts";
 import { assertReservedTaskVerificationToolNames } from "../../task-verification-session-runtime.ts";
+import { BEGIN_CODE_TASK_TOOL_NAME } from "../../tools/begin-code-task.ts";
 import type { AgentSession } from "../agentsession.ts";
 import type { ToolDefinitionEntry } from "../session-types.ts";
 
@@ -13,7 +14,11 @@ export function do__refreshToolRegistry(
   const previousActiveToolNames = self.getActiveToolNames();
   const allowedToolNames = self._allowedToolNames;
   const excludedToolNames = self._excludedToolNames;
-  const managedVerificationToolNames = new Set([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME]);
+  const managedVerificationToolNames = new Set([
+    TASK_VERIFICATION_TOOL_NAME,
+    REQUIREMENT_AUDIT_TOOL_NAME,
+    BEGIN_CODE_TASK_TOOL_NAME,
+  ]);
   const isAllowedTool = (name: string): boolean =>
     (!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
 

@@ -1,0 +1,23 @@
+# 2026-09-23 — The effect backstop must not depend on bounded snapshots
+
+- **Status:** Resolved
+- **Task/context:** An independent review of the adaptive verification tiers (LIGHT by default, escalation to STRICT on code changes).
+- **Unexpected observation or failure:** The LIGHT backstop saw only `taskOwnedPaths`, which come from workspace snapshots. It missed code edits in four cases:
+  - The snapshot exceeded 5,000 paths, for example a repository with a large ignored `.venv`, or any directory outside Git.
+  - The edit targeted a sibling worktree outside the working directory.
+  - A shell command changed source while path tracking had failed.
+  - An extension tool declared `workspace_write`, but LIGHT did not observe it.
+- **Evidence:** A new faux-provider suite covers a repository with 5,200 ignored `.venv` files, an ignored `bulk/` directory with 5,200 files, a sibling worktree, and a declared-write extension tool. With the previous backstop, five of its six cases fail. The sixth, a docs edit that should stay LIGHT, is the negative control.
+- **Approaches tried:**
+  - **Attempt:** Only add common environment directories to the snapshot skip list.
+    - **Outcome:** Partial.
+    - **Why:** It fixes `.venv`, but not arbitrary large ignored trees, non-repository directories, or edits outside the working directory.
+  - **Attempt:** Combine every path source, and escalate conservatively when a mutation is detected but its paths cannot be tracked.
+    - **Outcome:** Worked.
+    - **Why:** The path sources are new snapshot paths, the parsed mutation paths (`mutatedSourcePaths`), and the exact target of a direct or declared write, including absolute paths outside the working directory. A direct write keeps its known target, so a docs edit stays LIGHT even when the snapshot fails.
+- **Root cause:** Escalation was coupled to the one ledger signal that is bounded by design.
+- **Resolution:** `task-verification-tier-effects.ts` computes the candidates and adds an `effect_untracked` reason. `observedInLightTier` also observes tools that declare `workspace_write`. The snapshot skip list now also covers `.venv`, `venv`, `.tox`, `.cache`, `.gradle`, and `.next`.
+- **Verification:** `packages/coding-agent/test/suite/adaptive-verification-large-workspace.test.ts` passes 6 of 6, and 5 of those fail with the old backstop.
+- **Prevention/follow-up:** STRICT still requires in-workspace evidence. An edit outside the working directory escalates, but it cannot become ready without a recorded workspace effect, so run such work from the worktree that owns it.
+- **Reusable learning:** A safety escalation must use every independent signal of an effect, and treat "could not observe" as a reason to escalate, not as "nothing happened".
+- **References:** `packages/coding-agent/src/core/task-verification-tier-effects.ts`, `packages/coding-agent/src/core/task-verification/workspace-effect-state.ts`

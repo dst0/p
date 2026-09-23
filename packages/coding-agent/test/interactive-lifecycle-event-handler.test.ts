@@ -112,6 +112,39 @@ describe("interactive lifecycle event handler", () => {
     expect(mode.defaultEditor.onEscape).toBe(oldEscape);
   });
 
+  it("announces a verification tier escalation with its plain-language cause and refreshes the footer badge", async () => {
+    const { mode } = createMode();
+
+    await expect(
+      handle(mode, {
+        type: "verification_tier_changed",
+        tier: "strict",
+        previousTier: "light",
+        reason: "effect_source",
+        trigger: "src/a.ts",
+      }),
+    ).resolves.toBe(true);
+
+    expect(mode.showStatus).toHaveBeenCalledExactlyOnceWith("verification → STRICT (source change: src/a.ts)");
+    expect(mode.footer.invalidate).toHaveBeenCalledOnce();
+    expect(mode.ui.requestRender).toHaveBeenCalled();
+  });
+
+  it("refreshes the badge without a status line when the tier did not change", async () => {
+    const { mode } = createMode();
+
+    await handle(mode, {
+      type: "verification_tier_changed",
+      tier: "light",
+      previousTier: "light",
+      reason: "prior",
+    });
+
+    expect(mode.showStatus).not.toHaveBeenCalled();
+    expect(mode.footer.invalidate).toHaveBeenCalledOnce();
+    expect(mode.ui.requestRender).toHaveBeenCalled();
+  });
+
   it("shows the compiled-rules restored notice as a one-line status, not a warning", async () => {
     const { mode } = createMode();
     const message = "Compiled project rules restored; read_rules gates apply again.";

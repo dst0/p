@@ -19,6 +19,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
   { name: "budget", description: "View or change task spending: Unlimited, requests, tokens, or USD" },
   { name: "settings", description: "Open settings menu" },
   { name: "plan", description: "Plan first, then wait for approval before execution" },
+  { name: "verify", description: "Show or set verification for this session: auto, light, strict, off" },
   { name: "model", description: "Select model (opens selector UI)" },
   { name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
   { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
