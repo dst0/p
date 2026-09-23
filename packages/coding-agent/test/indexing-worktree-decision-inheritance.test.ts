@@ -151,7 +151,7 @@ describe("indexing decision inheritance for linked git worktrees", () => {
     git(seed, "add", "f.txt");
     git(seed, "commit", "-qm", "init");
     const worktree = path.join(root, "feature");
-    git(bareRepo, "worktree", "add", "-q", worktree, "-b", "feature");
+    git(bareRepo, "worktree", "add", "-q", worktree, "-b", "feature", "main");
 
     const indexingService = new IndexingService(agentDir);
     const context = makeContext(indexingService, worktree);
