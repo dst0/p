@@ -112,6 +112,17 @@ describe("interactive lifecycle event handler", () => {
     expect(mode.defaultEditor.onEscape).toBe(oldEscape);
   });
 
+  it("shows the compiled-rules restored notice as a one-line status, not a warning", async () => {
+    const { mode } = createMode();
+    const message = "Compiled project rules restored; read_rules gates apply again.";
+
+    await expect(handle(mode, { type: "project_instructions_restored", message })).resolves.toBe(true);
+
+    expect(mode.showStatus).toHaveBeenCalledExactlyOnceWith(message);
+    expect(mode.showWarning).not.toHaveBeenCalled();
+    expect(mode.showError).not.toHaveBeenCalled();
+  });
+
   it("handles compaction progress, cancellation, success, and errors", async () => {
     vi.useFakeTimers();
     const { mode, oldEscape } = createMode();

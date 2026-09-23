@@ -18,10 +18,11 @@ type AgentSessionEvent =
   | { type: "compaction_end"; reason: "manual" | "threshold" | "overflow"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean; errorMessage?: string }
   | { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
   | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-  | { type: "project_instructions_fallback"; message: string };
+  | { type: "project_instructions_fallback"; message: string }
+  | { type: "project_instructions_restored"; message: string };
 ```
 
-`queue_update` emits the full pending steering and follow-up queues whenever they change. `compaction_start` and `compaction_end` cover both manual and automatic compaction. `project_instructions_fallback` is a one-line user notice emitted when compiled project instructions are unavailable and the session serves legacy instructions instead; see [Compiler fallback](project-instructions.md#compiler-fallback).
+`queue_update` emits the full pending steering and follow-up queues whenever they change. `compaction_start` and `compaction_end` cover both manual and automatic compaction. `project_instructions_fallback` is a one-line user notice emitted when compiled project instructions are unavailable and the session serves legacy instructions instead. `project_instructions_restored` is the matching one-line notice when compiled delivery resumes after an announced fallback. See [Compiler fallback](project-instructions.md#compiler-fallback).
 
 Base events from [`AgentEvent`](https://github.com/dst0/p-mono/blob/main/packages/agent/src/types.ts#L179):
 

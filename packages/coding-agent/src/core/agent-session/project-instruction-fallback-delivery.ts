@@ -30,7 +30,8 @@ export function resolvePromptProjectInstructionDelivery(self: AgentSession): Pro
 /**
  * Align a new user turn with the currently prepared artifact. A refresh that changed between compiled and fallback
  * without rebuilding the system prompt between runs (a mid-run tool-hook refresh or a same-identity model switch)
- * is applied here, and entry into legacy fallback is announced once as a user-facing notice, never a model gate.
+ * is applied here. Entry into legacy fallback and recovery from an announced fallback are user-facing notices, never
+ * model gates.
  */
 export function syncProjectInstructionFallbackDelivery(self: AgentSession): void {
   const fallbackActive = isCompiledProjectInstructionFallbackActive(self);
@@ -46,12 +47,19 @@ export function syncProjectInstructionFallbackDelivery(self: AgentSession): void
     self._baseSystemPrompt = self._rebuildSystemPrompt(self.getActiveToolNames());
     self.agent.state.systemPrompt = self._baseSystemPrompt;
   }
+  const notice = self._projectInstructionFallbackNotice;
   if (!fallbackActive) {
-    self._projectInstructionFallbackAnnounced = false;
+    if (notice === "none") return;
+    // The user was told about the fallback, so explain why read_rules gates reappear.
+    self._projectInstructionFallbackNotice = "none";
+    self._emit({
+      type: "project_instructions_restored",
+      message: "Compiled project rules restored; read_rules gates apply again.",
+    });
     return;
   }
-  if (self._projectInstructionFallbackAnnounced) return;
-  self._projectInstructionFallbackAnnounced = true;
+  if (notice === "announced") return;
+  self._projectInstructionFallbackNotice = "announced";
   const diagnostic = prepared?.manifest.compilerDiagnostic;
   self._emit({
     type: "project_instructions_fallback",

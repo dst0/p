@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool, CompletionMode } from "@dst0/p-agent-core";
 import { Agent, resolveToolEffect } from "@dst0/p-agent-core";
-import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@dst0/p-ai";
+import type { Api, FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@dst0/p-ai";
 import { registerFauxProvider } from "@dst0/p-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
@@ -29,25 +29,9 @@ import {
   createTestExtensionsResult,
   createTestResourceLoader,
 } from "../utilities.ts";
+import { getMessageText } from "./harness-message-text.ts";
 
-type MessageTextPart = { type: "text"; text: string };
-
-export function getMessageText(message: unknown): string {
-  if (!message || typeof message !== "object" || !("content" in message)) {
-    return "";
-  }
-  const content = (message as { content?: string | Array<{ type: string; text?: string }> }).content;
-  if (content === undefined) {
-    return "";
-  }
-  if (typeof content === "string") {
-    return content;
-  }
-  return content
-    .filter((part): part is MessageTextPart => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-}
+export { getMessageText };
 
 export function getUserTexts(harness: Harness): string[] {
   return harness.session.messages
@@ -76,8 +60,17 @@ export interface HarnessOptions {
   withConfiguredAuth?: boolean;
   completionMode?: CompletionMode;
   taskVerificationMode?: TaskVerificationMode;
-  /** Prepared compiled-delivery controller, e.g. from createSessionProjectInstructionController. */
-  projectInstructions?: ProjectInstructionController;
+  /** Builds the controller before the session; faux is registered, so the default model compiler and backoff run. */
+  projectInstructions?: (context: HarnessProjectInstructionContext) => Promise<ProjectInstructionController>;
+}
+
+export interface HarnessProjectInstructionContext {
+  cwd: string;
+  resourceLoader: ResourceLoader;
+  modelRegistry: ModelRegistry;
+  settingsManager: SettingsManager;
+  faux: FauxProviderRegistration;
+  getModel(): Model<Api> | undefined;
 }
 
 export interface Harness {
@@ -243,6 +236,15 @@ async function buildHarness(
     : undefined;
   const resourceLoader =
     options.resourceLoader ?? createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
+  if (options.projectInstructions) fauxProvider.register();
+  const projectInstructions = await options.projectInstructions?.({
+    cwd: tempDir,
+    resourceLoader,
+    modelRegistry,
+    settingsManager,
+    faux: fauxProvider,
+    getModel: () => agent.state.model,
+  });
 
   const session = new AgentSession({
     agent,
@@ -251,7 +253,7 @@ async function buildHarness(
     cwd: tempDir,
     modelRegistry,
     resourceLoader,
-    projectInstructions: options.projectInstructions,
+    projectInstructions,
     customTools: taskVerificationRuntime?.customTools,
     baseToolsOverride: toolMap,
     initialActiveToolNames: options.initialActiveToolNames,

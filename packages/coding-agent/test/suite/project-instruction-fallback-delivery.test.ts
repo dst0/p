@@ -2,16 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AssistantMessage, type Context, fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../../../src/core/auth-storage.ts";
-import { ModelRegistry } from "../../../src/core/model-registry.ts";
-import type { ProjectInstructionCompiler } from "../../../src/core/project-instructions/index.ts";
-import { createSessionProjectInstructionController } from "../../../src/core/project-instructions/session-controller.ts";
-import { SettingsManager } from "../../../src/core/settings-manager.ts";
+import type { ProjectInstructionCompiler } from "../../src/core/project-instructions/index.ts";
+import { createSessionProjectInstructionController } from "../../src/core/project-instructions/session-controller.ts";
 import {
   cleanupProjectInstructionModeWorkspaces,
   createProjectInstructionModeWorkspace,
-} from "../../project-instruction-delivery-fixture.ts";
-import { createHarness, getMessageText, type Harness } from "../harness.ts";
+} from "../project-instruction-delivery-fixture.ts";
+import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 const LEGACY_SENTINEL = "LEGACY_FALLBACK_SENTINEL";
 const SENTINEL_SECTION = `## Release notes\n\nKeep ${LEGACY_SENTINEL} release notes verbatim.\n`;
@@ -59,6 +56,12 @@ function fallbackNotices(harness: Harness): string[] {
   return harness.events.flatMap((event) => (event.type === "project_instructions_fallback" ? [event.message] : []));
 }
 
+function restoredNotices(harness: Harness): string[] {
+  return harness.eventsOfType("project_instructions_restored").map((event) => event.message);
+}
+
+const RESTORED_NOTICE = "Compiled project rules restored; read_rules gates apply again.";
+
 describe("compiled project instructions degrade to legacy delivery when compilation is unavailable", () => {
   const harnesses: Harness[] = [];
 
@@ -68,20 +71,12 @@ describe("compiled project instructions degrade to legacy delivery when compilat
   });
 
   async function createCompiledHarness(workspace: ProjectInstructionWorkspace, compiler?: ProjectInstructionCompiler) {
-    const projectInstructions = compiler
-      ? await createSessionProjectInstructionController({
-          cwd: workspace.root,
-          resourceLoader: workspace.resourceLoader,
-          modelRegistry: ModelRegistry.inMemory(AuthStorage.inMemory()),
-          settingsManager: SettingsManager.inMemory(),
-          getModel: () => undefined,
-          compiler,
-        })
-      : undefined;
     const harness = await createHarness({
       tempRoot: workspace.root,
       resourceLoader: workspace.resourceLoader,
-      projectInstructions,
+      projectInstructions: compiler
+        ? (context) => createSessionProjectInstructionController({ ...context, cwd: workspace.root, compiler })
+        : undefined,
       completionMode: "implicit",
       models: [{ id: "faux-1" }, { id: "faux-2" }],
     });
@@ -130,7 +125,7 @@ describe("compiled project instructions degrade to legacy delivery when compilat
     // Degraded turns do not retry the unreachable compiler inline before mutating tool calls.
     expect(compiler).toHaveBeenCalledOnce();
     await promptForText(harness, "anything else?");
-    expect(fallbackNotices(harness)).toHaveLength(1);
+    expect([fallbackNotices(harness).length, restoredNotices(harness)]).toEqual([1, []]);
   });
 
   it("keeps the compiled read_rules gate unchanged when compilation succeeds", async () => {
@@ -149,7 +144,7 @@ describe("compiled project instructions degrade to legacy delivery when compilat
     expect(views[0]?.systemPrompt).toContain('mode="compiled"');
     expect(views[0]?.systemPrompt).not.toContain("<project_context>");
     expect(views[0]?.messagesText).toContain("<project_rule_routes");
-    expect(fallbackNotices(harness)).toEqual([]);
+    expect([...fallbackNotices(harness), ...restoredNotices(harness)]).toEqual([]);
   });
 
   it("resumes compiled gating and history filtering after a later reload compiles successfully", async () => {
@@ -179,26 +174,29 @@ describe("compiled project instructions degrade to legacy delivery when compilat
     // The degraded turn's legacy <project_rules> block is removed from compiled-delivery history.
     expect(views[0]?.messagesText).not.toContain("<project_rules>");
     expect(fallbackNotices(harness)).toHaveLength(1);
+    expect(restoredNotices(harness)).toEqual([RESTORED_NOTICE]);
   });
 
   it("announces each entry into fallback once, including after a reload that still cannot compile", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const endpoint = { up: true };
     const harness = await createCompiledHarness(workspace, switchableCompiler(workspace, endpoint));
-    const noticeCounts: number[] = [];
+    const noticeCounts: string[] = [];
+    const recordNotices = () =>
+      noticeCounts.push(`${fallbackNotices(harness).length}/${restoredNotices(harness).length}`);
     const reloadAndPrompt = async (text: string) => {
       await harness.session.reload();
       await promptForText(harness, text);
-      noticeCounts.push(fallbackNotices(harness).length);
+      recordNotices();
     };
 
     await promptForText(harness, "compiled start");
-    noticeCounts.push(fallbackNotices(harness).length);
+    recordNotices();
     endpoint.up = false;
     writeSupplementalRule(workspace, "Never skip the first late rule.");
     await reloadAndPrompt("first fallback");
     await promptForText(harness, "still first fallback");
-    noticeCounts.push(fallbackNotices(harness).length);
+    recordNotices();
     await reloadAndPrompt("reload still failing");
     endpoint.up = true;
     await reloadAndPrompt("recovered");
@@ -206,7 +204,8 @@ describe("compiled project instructions degrade to legacy delivery when compilat
     writeSupplementalRule(workspace, "Never skip the second late rule.");
     await reloadAndPrompt("second fallback");
 
-    expect(noticeCounts).toEqual([0, 1, 1, 2, 2, 3]);
+    // fallback/restored notice counts: one per entry into fallback, re-announced after a failing reload.
+    expect(noticeCounts).toEqual(["0/0", "1/0", "1/0", "2/0", "2/1", "3/1"]);
   });
 
   it("does not strand a compiled run when a mid-run refresh falls back, then recovers at a later turn", async () => {
@@ -267,6 +266,7 @@ describe("compiled project instructions degrade to legacy delivery when compilat
     expect(gated[0]?.systemPrompt).not.toContain("<project_context>");
     expect(toolResults(harness).at(-1)?.text).toMatch(/^Call read_rules/u);
     expect(existsSync(compiledTarget)).toBe(false);
+    expect(restoredNotices(harness)).toEqual([RESTORED_NOTICE]);
     endpoint.up = false;
     writeSupplementalRule(workspace, "Never skip the final late rule.");
     await harness.session.setModel(harness.getModel("faux-1")!);

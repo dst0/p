@@ -762,6 +762,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
 | `project_instructions_fallback` | Compiled project instructions are unavailable; legacy instructions are in use |
+| `project_instructions_restored` | Compiled project instructions are back after an announced fallback |
 | `extension_error` | Extension threw an error |
 
 ### agent_start
@@ -978,6 +979,17 @@ Emitted once per entry into compiler fallback (and again after a `/reload` that 
 {
   "type": "project_instructions_fallback",
   "message": "Compiled project rules unavailable (project instruction compiler provider call failed); using legacy AGENTS.md/CLAUDE.md instructions until a /reload compiles them."
+}
+```
+
+### project_instructions_restored
+
+Emitted once when a new prompt starts with compiled project instructions again after a `project_instructions_fallback` notice, typically after a `/reload` that compiles successfully. Compiled `read_rules` gates apply again from that prompt.
+
+```json
+{
+  "type": "project_instructions_restored",
+  "message": "Compiled project rules restored; read_rules gates apply again."
 }
 ```
 

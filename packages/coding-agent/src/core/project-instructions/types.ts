@@ -165,7 +165,12 @@ export interface ProjectInstructionTurnRoutes {
   inputHash: string;
 }
 
+export interface ProjectInstructionRefreshOptions {
+  /** Explicit user retry (`/reload`): skip the compiler-failure backoff and make one real compile attempt. */
+  retryFailedCompilation?: boolean;
+}
+
 export interface ProjectInstructionController {
   state: ProjectInstructionState;
-  refresh(): Promise<PreparedProjectInstructions>;
+  refresh(options?: ProjectInstructionRefreshOptions): Promise<PreparedProjectInstructions>;
 }

@@ -68,6 +68,7 @@ export type AgentSessionEvent =
   | { type: "thinking_level_changed"; level: ThinkingLevel }
   | { type: "interaction_mode_changed"; mode: InteractionMode }
   | { type: "project_instructions_fallback"; message: string }
+  | { type: "project_instructions_restored"; message: string }
   | {
       type: "compaction_end";
       reason: "manual" | "threshold" | "overflow";
