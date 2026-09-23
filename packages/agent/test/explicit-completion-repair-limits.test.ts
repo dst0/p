@@ -140,6 +140,16 @@ describe("explicit completion repair limits", () => {
     );
   });
 
+  it("stops a model that keeps returning empty responses and names that cause", async () => {
+    const empty = () => assistant([], "stop");
+    const { calls, last } = await run(empty);
+
+    expect(calls).toBe(4);
+    expect(last?.role === "assistant" && last.errorMessage).toBe(
+      "Agent stopped because the provider returned 4 empty responses without a valid tool call.",
+    );
+  });
+
   it("honors explicit limits over the defaults", async () => {
     const { calls } = await run(text, { completionLimits: { maxMissingFinishRetries: 1 } });
 

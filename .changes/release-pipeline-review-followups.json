@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Review follow-up: record GitHub Deployments for Pages, and document the closed historical-exception list and the fragment rule for test-only and bot PRs."
+}

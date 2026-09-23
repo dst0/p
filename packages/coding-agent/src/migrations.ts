@@ -10,8 +10,8 @@ import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
 
 const MIGRATION_GUIDE_URL =
-  "https://github.com/dst0/p-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
-const EXTENSIONS_DOC_URL = "https://github.com/dst0/p-mono/blob/main/packages/coding-agent/docs/extensions.md";
+  "https://github.com/dst0/p/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
+const EXTENSIONS_DOC_URL = "https://github.com/dst0/p/blob/main/packages/coding-agent/docs/extensions.md";
 
 function migrateDotPiToDotP(): boolean {
   if (CONFIG_DIR_NAME !== ".p") return false;

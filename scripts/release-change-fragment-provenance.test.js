@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -32,7 +32,7 @@ function noneFragment(packages, field, value) {
   return `${JSON.stringify({ schemaVersion: 1, packages, type: "None", [field]: value })}\n`;
 }
 
-test("allows only the seven exact historical release exceptions", () => {
+test("allows only the eleven exact historical release exceptions", () => {
   const expectedCommits = [
     "56eeb58cf67bd906677e9ba335ff97fef6352374",
     "4c6bc0af26ddb2da25bf246bb8748c239833b543",
@@ -41,6 +41,10 @@ test("allows only the seven exact historical release exceptions", () => {
     "4f99a97c755281e0e85ad06ddc611631501e9888",
     "5cf86d4d9441ceff1f15e6129d7110bca2d3f462",
     "2db67221fabc077df03b1412b93375f177dc42f4",
+    "35ec516238beeb18360d7550a91612d8cf4809f7",
+    "66b1775adc14b68c0813f60f62e5b96e50b9c467",
+    "589407fa29ab63cc236e6da4b933654bdf830147",
+    "a496362304ba7a6ffafff5c426a1b79ac6669e9a",
   ];
   assert.deepEqual(getHistoricalReleaseFragmentExceptionCommits(), expectedCommits);
   assert.equal(
@@ -150,6 +154,43 @@ test("rejects current fragment content that no longer matches its committed evid
     }
     write(repoRoot, path, content);
     assert.equal(createChangeFragmentEvidence(repoRoot).commits.length, 2);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+function enforceReasons(repoRoot) {
+  write(repoRoot, "scripts/release-change-fragments.js", 'export const policy = "release-none-reason-enforcement-v2";\n');
+  write(repoRoot, ".changes/reason-policy.json", noneFragment(["coding-agent"], "reason", "Enforce reasons for internal fragments."));
+  commit(repoRoot, "enforce reasons for internal fragments");
+}
+
+test("treats non-ASCII package paths as material instead of letting Git quoting hide them", () => {
+  const repoRoot = fixture();
+  try {
+    enforceReasons(repoRoot);
+    write(repoRoot, "packages/agent/src/\u00fcnicode.js", "export const value = 1;\n");
+    commit(repoRoot, "uncovered non-ASCII agent source");
+    const head = git(repoRoot, "rev-parse", "HEAD");
+    assert.throws(
+      () => createChangeFragmentEvidence(repoRoot),
+      new RegExp(`${head}: material release changes require a release-note fragment`),
+    );
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("binds the reviewed code-index alias to its historical commit, not only to its bytes", () => {
+  const scopes = JSON.parse(readFileSync(new URL("./fixtures/release-historical-fragment-scopes.json", import.meta.url), "utf8"));
+  const { path, content } = scopes.flatMap(({ fragments }) => fragments).find((entry) => entry.path === ".changes/fix-vitest-audit.json");
+  const repoRoot = fixture();
+  try {
+    enforceReasons(repoRoot);
+    write(repoRoot, path, content);
+    write(repoRoot, "packages/code-index/src/index.js", "export const value = 1;\n");
+    commit(repoRoot, "replay the reviewed bytes in a different commit");
+    assert.throws(() => createChangeFragmentEvidence(repoRoot), /fix-vitest-audit\.json: release-note fragment names an unknown changelog package/);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

@@ -272,7 +272,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 Use `/export [file]` to write a session to HTML.
 
-Use `/share` to upload a private GitHub gist with a shareable HTML link.
+Use `/share` to upload a private GitHub gist with a shareable HTML link. The default viewer link points to `https://p-agent.pages.dev/session/`, which does not serve a session viewer yet; the command also prints the gist URL, and `P_SHARE_VIEWER_URL` can point the link at a viewer you host.
 
 If you use p for open source work and want to publish sessions for model, prompt, tool, and evaluation research, share them publicly on Hugging Face or similar platforms.
 
@@ -445,7 +445,7 @@ p --task-verification off --completion-mode implicit -p "Say exactly: ok"
 | `P_CODING_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir`                                                                             |
 | `P_PACKAGE_DIR`              | Override package directory, useful for Nix/Guix store paths                                                                                   |
 | `P_OFFLINE`                  | Disable startup network operations, including update checks, package update checks, and install/update telemetry                              |
-| `P_SKIP_VERSION_CHECK`       | Skip the p version update check at startup. This prevents the `p.pages.dev` latest-version request                                            |
+| `P_SKIP_VERSION_CHECK`       | Skip the p version update check. This prevents the npm registry latest-version request and the GitHub release-notes request                   |
 | `P_TELEMETRY`                | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no`. This does not disable update checks |
 | `P_CACHE_RETENTION`          | Set to `long` for extended prompt cache where supported                                                                                       |
 | `VISUAL`, `EDITOR`           | External editor for Ctrl+G                                                                                                                    |

@@ -39,6 +39,7 @@ export {
   getThemesDir,
   getUpdateInstruction,
   installLegacyAgentDirEnvAlias,
+  readInstalledPackageVersion,
 } from "./install-paths.ts";
 export { detectInstallMethod, getPackageDir } from "./self-update.ts";
 export type { InstallMethod, SelfUpdateCommand } from "./types.ts";

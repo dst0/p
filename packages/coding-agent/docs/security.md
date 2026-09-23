@@ -52,8 +52,20 @@ Common patterns are documented in [Containerization](containerization.md):
 
 If you bind-mount a host workspace read/write, writes from inside the container or VM can still modify host files. Use read-only mounts or copy files into and out of the sandbox when you need stronger protection from unintended writes.
 
+## Update Source and Project Endpoints
+
+`p update` reinstalls `@dst0/p` in place with the package manager that installed it. The update check reads the latest version from p's own npm registry entry (`https://registry.npmjs.org/@dst0%2fp/latest`) and, only when that version is newer, reads release notes from the fork's GitHub releases (`https://api.github.com/repos/dst0/p/releases/tags/v<version>`). No response can change which package is installed, and self-update never uninstalls p to install another package.
+
+When the check found a newer version, `p update` installs exactly that version (`@dst0/p@<version>`), so a lagging registry mirror cannot silently reinstall the old release, and it reports an error instead of success if the installed version still differs. Self-update runs with `--ignore-scripts` and turns off the package manager's minimum-release-age cooldown (`--min-release-age=0` for npm, `--config.minimumReleaseAge=0` for pnpm, `--minimum-release-age=0` for Bun) so the announced release can install. That override applies to the whole install: npm honors the `npm-shrinkwrap.json` published with p, which pins every dependency version, but pnpm and Bun do not read it, so their dependency resolution also skips the cooldown.
+
+p's own network endpoints (update check, release notes, install/update telemetry, `/share` viewer links, and provider attribution headers) use only hosts the project controls: the npm registry entry for `@dst0/p`, `github.com/dst0/p`, and `p-agent.pages.dev`. Upstream pi endpoints are never contacted. `p-agent.pages.dev` does not serve the install telemetry endpoint or a `/share` session viewer yet; the telemetry ping is fire-and-forget, so nothing is recorded.
+
+### Known issue: p ≤ 5.0.2 self-update
+
+p 5.0.2 and every earlier release check for updates at upstream pi's version endpoint and follow the package name it returns. That endpoint currently names upstream's `@earendil-works/pi-coding-agent`, so on those versions a bare `p update` or `p update --self` uninstalls `@dst0/p` and installs the upstream package instead. On p 5.0.2 or earlier, never run a bare `p update`. Update with `p update --self --force`, which skips the version check and reinstalls `@dst0/p`, or reinstall directly with `npm i -g --ignore-scripts @dst0/p@latest`. Releases after 5.0.2 read the version from p's own npm registry entry and always reinstall `@dst0/p`.
+
 ## Reporting Security Issues
 
-To report a security issue, follow the repository [Security Policy](https://github.com/dst0/p-mono/blob/main/SECURITY.md). Do not open a public issue for security-sensitive reports.
+To report a security issue, follow the repository [Security Policy](https://github.com/dst0/p/blob/main/SECURITY.md). Do not open a public issue for security-sensitive reports.
 
 Expected local-agent behavior, lack of a built-in sandbox, prompt injection from untrusted content, and behavior of user-installed extensions or skills are generally outside the security boundary unless the report demonstrates a real privilege-boundary bypass or shows how p grants access that the local user did not already have.

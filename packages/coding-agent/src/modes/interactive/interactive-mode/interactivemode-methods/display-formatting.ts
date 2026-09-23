@@ -52,7 +52,8 @@ export function do_reportInstallTelemetry(self: InteractiveMode, version: string
     return;
   }
 
-  void fetch(`https://p.dev/api/report-install?version=${encodeURIComponent(version)}`, {
+  // Fire-and-forget: one GET to the project's own Pages domain, bounded by a short timeout, never retried or surfaced.
+  void fetch(`https://p-agent.pages.dev/api/report-install?version=${encodeURIComponent(version)}`, {
     headers: {
       "User-Agent": getPiUserAgent(version),
     },

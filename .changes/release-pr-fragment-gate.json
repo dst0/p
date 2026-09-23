@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Enforce release-note fragments in the required PR check and record reviewed historical exceptions for four merged commits; release tooling only, no published runtime change."
+}

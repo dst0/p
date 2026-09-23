@@ -97,7 +97,7 @@ The fast responder emits a short generated acknowledgement before large uncached
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://p.pages.dev/api/report-install`. Opting out of telemetry does not disable update checks; p can still fetch `https://p.pages.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` only controls the anonymous, fire-and-forget install/update ping to `https://p-agent.pages.dev/api/report-install` (it also gates optional provider attribution headers). Opting out of telemetry does not disable update checks; p can still fetch `https://registry.npmjs.org/@dst0%2fp/latest` to look for the latest version published to npm, and, only when that version is newer, its release notes from `https://api.github.com/repos/dst0/p/releases/tags/v<version>`. The update check never sends a p user agent and never changes which package `p update` installs: it always reinstalls `@dst0/p`. The interactive update notice only runs when `startupNotices` is `true` (default `false`).
 
 Set `P_SKIP_VERSION_CHECK=1` to disable the p version update check. Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 

@@ -13,15 +13,18 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Pages
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       deployments: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
 
@@ -31,11 +34,23 @@ jobs:
       - name: Build workspace & site
         run: npm run build
 
+      # Wrangler comes from its own reviewed lockfile, outside the npm workspace graph.
+      - name: Install pinned Wrangler
+        working-directory: .github/pages-deploy
+        run: npm ci --ignore-scripts
+
+      # cloudflare/pages-action was removed upstream; wrangler-action is Cloudflare's supported
+      # Pages direct-upload action. It reuses the installed Wrangler when wranglerVersion matches.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        env:
+          # A version mismatch would make the action run `npm i`; never run lifecycle scripts.
+          npm_config_ignore_scripts: "true"
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: p-agent
-          directory: packages/site/dist
-          gitToCommitMetadata: true
+          # Lets the action record a GitHub Deployment so the live URL stays visible under Environments.
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: .github/pages-deploy
+          wranglerVersion: "4.135.0"
+          command: pages deploy ../../packages/site/dist --project-name=p-agent --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}
