@@ -20,8 +20,9 @@ export interface PackageCommandOptions {
 }
 
 export interface SelfUpdatePlan {
-  packageName: string;
   shouldRun: boolean;
+  /** Validated semver of the newer registry release; absent for --force or when the check had no answer. */
+  version?: string;
   note?: string;
 }
 

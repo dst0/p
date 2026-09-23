@@ -1,0 +1,8 @@
+{
+  "name": "p-pages-deploy",
+  "private": true,
+  "description": "Pinned Wrangler toolchain for .github/workflows/deploy-pages.yml; install with npm ci --ignore-scripts.",
+  "dependencies": {
+    "wrangler": "4.135.0"
+  }
+}

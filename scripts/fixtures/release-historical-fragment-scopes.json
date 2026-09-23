@@ -688,5 +688,51 @@
       "packages/coding-agent/test/project-instructions-processor.test.ts"
     ],
     "fragments": []
+  },
+  {
+    "commit": "35ec516238beeb18360d7550a91612d8cf4809f7",
+    "paths": [
+      ".jules/bolt.md",
+      "packages/coding-agent/src/core/task-verification/workspace-effect-state.ts"
+    ],
+    "fragments": []
+  },
+  {
+    "commit": "66b1775adc14b68c0813f60f62e5b96e50b9c467",
+    "paths": [
+      ".jules/bolt.md",
+      "packages/coding-agent/src/core/package-manager/cache-management.ts"
+    ],
+    "fragments": []
+  },
+  {
+    "commit": "589407fa29ab63cc236e6da4b933654bdf830147",
+    "paths": [
+      ".jules/bolt.md",
+      "packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/focused-shell-command.ts",
+      "packages/coding-agent/src/modes/interactive/components/tree-selector.ts",
+      "packages/tui/src/components/input/input-methods/input-handling.ts",
+      "scripts/file-structure-baseline.json"
+    ],
+    "fragments": []
+  },
+  {
+    "commit": "a496362304ba7a6ffafff5c426a1b79ac6669e9a",
+    "paths": [
+      ".changes/fix-vitest-audit.json",
+      "docs/leanings/2026-09-22-vitest-audit-remediation.md",
+      "package-lock.json",
+      "package.json",
+      "packages/agent/package.json",
+      "packages/ai/package.json",
+      "packages/code-index/package.json",
+      "packages/coding-agent/package.json"
+    ],
+    "fragments": [
+      {
+        "path": ".changes/fix-vitest-audit.json",
+        "content": "{\n  \"schemaVersion\": 1,\n  \"packages\": [\"agent\", \"ai\", \"code-index\", \"coding-agent\"],\n  \"type\": \"None\",\n  \"reason\": \"Update the development-only Vitest toolchain to 4.1.11 to remove its moderate redirect-mock path-traversal and arbitrary-file-read advisory without changing published runtime behavior.\"\n}\n"
+      }
+    ]
   }
 ]

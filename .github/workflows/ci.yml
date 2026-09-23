@@ -43,6 +43,10 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: node scripts/release-pr-version-policy.js "${{ github.event.pull_request.base.sha }}"
 
+      - name: Enforce release-note fragments for material changes
+        if: ${{ github.event_name == 'pull_request' }}
+        run: node scripts/release-pr-fragment-policy.js "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
       - name: Test with coverage
         env:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

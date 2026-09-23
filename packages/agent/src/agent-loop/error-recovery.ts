@@ -12,11 +12,11 @@ import {
   emitAbortedTurn,
   emitProtocolFailure,
   isCompletionProtocolEnabled,
-  resolveCompletionLimits,
   resolveCompletionMode,
   withCompletionProtocolTools,
 } from "./message-preparation.ts";
 import { prepareAgentNextTurn } from "./next-turn-preparation.ts";
+import { protocolLimitDiagnostic, resolveCompletionLimits } from "./protocol-limits.ts";
 import { prepareProviderLengthContinuation } from "./provider-length-completion-compatibility.ts";
 import { isProviderLengthResponse, requiresSpecializedProviderLengthRepair } from "./provider-length-continuation.ts";
 import { streamAssistantResponse } from "./response-processing.ts";
@@ -191,17 +191,13 @@ export async function runLoop(
           completionState.noProgressTurns++;
         }
 
-        const malformedExceeded = completionState.malformedToolRetries > completionLimits.maxMalformedToolRetries;
-        const emptyExceeded = completionState.emptyAssistantRetries > completionLimits.maxEmptyAssistantRetries;
-        const noProgressExceeded = completionState.noProgressTurns > completionLimits.maxNoProgressTurns;
-        if (malformedExceeded || emptyExceeded || noProgressExceeded) {
-          const diagnostic = malformedExceeded
-            ? protocolRepair?.reason === "repetitive_model_output"
-              ? `Agent stopped because the model entered a repetitive output loop ${completionState.malformedToolRetries} times.`
-              : `Agent stopped because the provider repeatedly reported tool use without returning a valid tool call after ${completionState.malformedToolRetries} attempts.`
-            : emptyExceeded
-              ? `Agent stopped because the provider returned ${completionState.emptyAssistantRetries} empty responses without a valid tool call.`
-              : `Agent stopped because the model did not call \`finish_work\` and made no progress for ${completionState.noProgressTurns} turns.`;
+        const limitDiagnostic = protocolLimitDiagnostic(
+          completionState,
+          completionLimits,
+          completionMode,
+          protocolRepair,
+        );
+        if (limitDiagnostic) {
           await emitProtocolFailure(
             currentContext,
             newMessages,
@@ -209,7 +205,7 @@ export async function runLoop(
             emit,
             completionMode,
             "no_progress_stop",
-            diagnostic,
+            limitDiagnostic,
             false,
           );
           return;
@@ -234,9 +230,7 @@ export async function runLoop(
               maxRetries:
                 protocolRepair.event === "malformed_tool_call_retry"
                   ? completionLimits.maxMalformedToolRetries
-                  : completionMode === "hybrid"
-                    ? completionLimits.maxMissingFinishRetries
-                    : completionLimits.maxTurns,
+                  : completionLimits.maxMissingFinishRetries,
               reason: protocolRepair.reason,
             });
             const repairMessage = createProtocolRepairMessage(protocolRepair.message, protocolRepair.reason);

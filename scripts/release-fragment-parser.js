@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 
 const FRAGMENT_TYPES = new Set(["Added", "Changed", "Fixed", "Removed", "Breaking Changes", "None"]);
 
-export function parseReleaseChangeFragment(path, content, allowLegacyNoneSummary = false) {
+export function parseReleaseChangeFragment(path, content, allowLegacyNoneSummary = false, packageAliases = {}) {
+  const id = path.slice(".changes/".length, -".json".length);
+  if (id.length === 0) {
+    throw new Error(`${path}: release-note fragment needs a non-empty file name`);
+  }
   let fragment;
   try {
     fragment = JSON.parse(content);
@@ -15,7 +19,13 @@ export function parseReleaseChangeFragment(path, content, allowLegacyNoneSummary
   if (!Array.isArray(fragment.packages) || fragment.packages.length === 0) {
     throw new Error(`${path}: release-note fragment must name at least one package`);
   }
-  const packages = [...new Set(fragment.packages)];
+  const packages = [
+    ...new Set(
+      fragment.packages.map((name) =>
+        typeof name === "string" && Object.hasOwn(packageAliases, name) ? packageAliases[name] : name,
+      ),
+    ),
+  ];
   if (packages.some((name) => !["agent", "ai", "coding-agent", "tui"].includes(name))) {
     throw new Error(`${path}: release-note fragment names an unknown changelog package`);
   }
@@ -37,7 +47,7 @@ export function parseReleaseChangeFragment(path, content, allowLegacyNoneSummary
   }
   return {
     path,
-    id: path.slice(".changes/".length, -".json".length),
+    id,
     packages: packages.sort(),
     type: fragment.type,
     summary: fragment.summary?.trim(),

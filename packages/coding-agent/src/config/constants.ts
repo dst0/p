@@ -57,4 +57,4 @@ export const LEGACY_ENV_AGENT_DIR = "PI_CODING_AGENT_DIR";
 
 export const LEGACY_ENV_SESSION_DIR = "PI_CODING_AGENT_SESSION_DIR";
 
-export const DEFAULT_SHARE_VIEWER_URL = "https://p.dev/session/";
+export const DEFAULT_SHARE_VIEWER_URL = "https://p-agent.pages.dev/session/";

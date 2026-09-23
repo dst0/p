@@ -148,16 +148,13 @@ function buildBunBinaryRelease(targetDirectory, archiveDirectory) {
     "--out",
     binaryBuildDirectory,
   ]);
+  const binaryName = platform.startsWith("windows-") ? "p.exe" : "p";
+  if (!existsSync(join(binaryBuildDirectory, platform, binaryName))) {
+    throw new Error(`Binary build did not produce ${binaryName} for ${platform}`);
+  }
   rmSync(targetDirectory, { force: true, recursive: true });
   cpSync(join(binaryBuildDirectory, platform), targetDirectory, { recursive: true });
-  const entrypoint = join(targetDirectory, platform.startsWith("windows-") ? "p.exe" : "p");
-  if (!existsSync(entrypoint)) {
-    cpSync(join(targetDirectory, platform.startsWith("windows-") ? "pi.exe" : "pi"), entrypoint);
-  }
-  const ext = platform.startsWith("windows-") ? ".zip" : ".tar.gz";
-  const archiveName = existsSync(join(binaryBuildDirectory, `p-${platform}${ext}`))
-    ? `p-${platform}${ext}`
-    : `pi-${platform}${ext}`;
+  const archiveName = `p-${platform}${platform.startsWith("windows-") ? ".zip" : ".tar.gz"}`;
   cpSync(join(binaryBuildDirectory, archiveName), join(archiveDirectory, archiveName));
   return platform;
 }
@@ -263,8 +260,7 @@ if (!options.skipInstall) {
   console.log("\nLocal Bun binary release:");
   console.log(`  ${binaryDirectory}`);
   const ext = String(binaryPlatform).startsWith("windows-") ? "zip" : "tar.gz";
-  const name = existsSync(join(outDir, `p-${binaryPlatform}.${ext}`)) ? `p-${binaryPlatform}.${ext}` : `pi-${binaryPlatform}.${ext}`;
-  console.log(`  ${join(outDir, name)}`);
+  console.log(`  ${join(outDir, `p-${binaryPlatform}.${ext}`)}`);
   console.log("\nRun the local Bun binary release from outside the repository:");
   console.log(`  ${join(binaryDirectory, String(binaryPlatform).startsWith("windows-") ? "p.exe" : "p")} --help`);
 

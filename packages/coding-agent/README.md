@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://p.pages.dev">
-    <img alt="p logo" src="https://p.pages.dev/logo-auto.svg" width="128">
+  <a href="https://p-agent.pages.dev">
+    <img alt="p logo" src="https://p-agent.pages.dev/logo-auto.svg" width="128">
   </a>
 </p>
 <p align="center">
@@ -61,10 +61,12 @@ npm install -g --ignore-scripts @dst0/p
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. p does not require install scripts for normal npm installs.
 
-Installer alternative:
+To build and link p from a source checkout instead, run `./install.sh` from the checkout. It installs missing prerequisites (git, build tools, Python 3.12+, Node.js 22) and then runs `reinstall.sh`:
 
 ```bash
-curl -fsSL https://p.pages.dev/install.sh | sh
+git clone https://github.com/dst0/p.git
+cd p
+./install.sh
 ```
 
 Authenticate with an API key:
@@ -309,8 +311,8 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 p has two separate startup features:
 
-- **Update check:** fetches `https://p.pages.dev/api/latest-version` to check whether a newer p version exists. Disable it with `P_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
-- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://p.pages.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `P_TELEMETRY=0`. This does not disable update checks; p may still contact `p.pages.dev` for the latest version unless update checks are disabled or offline mode is enabled.
+- **Update check:** reads the latest version published to the public npm registry from `https://registry.npmjs.org/@dst0%2fp/latest` (even when npm is configured with a mirror), because `p update` reinstalls exactly that package from npm. Only when that version is newer than the running one does p also fetch its release notes from `https://api.github.com/repos/dst0/p/releases/tags/v<version>`; if the notes are unavailable, no notes are shown. Neither request sends a p user agent, and the response never changes which package is installed: self-update always reinstalls `@dst0/p` and never uninstalls p or switches to another package. `p update` checks before updating unless `--force` is given; the interactive update notice only runs when the `startupNotices` setting is `true` (default `false`). Disable the check with `P_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
+- **Install/update telemetry:** after first install or a changelog-detected update, sends a single anonymous, fire-and-forget version ping to `https://p-agent.pages.dev/api/report-install` (5-second timeout, no retry, failures are ignored). The project site does not serve that endpoint yet, so nothing is recorded. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `P_TELEMETRY=0`. This does not disable update checks; p may still contact the npm registry (and GitHub for release notes) unless update checks are disabled or offline mode is enabled.
 
 Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 
@@ -622,6 +624,8 @@ p config                    # Enable/disable package resources
 
 `p config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `p update` never prompts for project trust.
 
+`p update --self` reinstalls `@dst0/p` with the package manager that installed it, using `--ignore-scripts` and turning off that package manager's minimum-release-age cooldown (`--min-release-age=0` for npm, `--config.minimumReleaseAge=0` for pnpm, `--minimum-release-age=0` for Bun; Yarn has no such setting). A cooldown would otherwise refuse the release the update check just announced. The override covers the whole install: npm honors the `npm-shrinkwrap.json` published with p, which pins every dependency version, but pnpm and Bun do not read it, so their dependency resolution also skips the cooldown. When the check found a newer version, the install is pinned to exactly that version (`@dst0/p@<version>`), and p reports an error instead of success if the installed version still differs afterwards.
+
 ### Modes
 
 | Flag | Description |
@@ -768,7 +772,7 @@ p --task-verification audit -p "Implement the structured specification in spec.m
 | `P_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
 | `P_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
 | `P_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `P_SKIP_VERSION_CHECK` | Skip the p version update check at startup. This prevents the `p.pages.dev` latest-version request |
+| `P_SKIP_VERSION_CHECK` | Skip the p version update check. This prevents the npm registry latest-version request and the GitHub release-notes request |
 | `P_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
 | `P_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |

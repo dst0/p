@@ -116,6 +116,23 @@ test("macOS binary builds receive a runnable ad-hoc signature", () => {
   assert.ok(signStart > binaryBuildScript.indexOf("bun build --compile"));
 });
 
+test("release uploads exactly the p-named archives the binary build produces", () => {
+  const platforms = /^\s+PLATFORMS=\(([a-z0-9 -]+)\)$/m.exec(binaryBuildScript)?.[1].split(" ");
+  assert.equal(platforms?.length, 6);
+  const expected = platforms.map((platform) => `p-${platform}.${platform.startsWith("windows-") ? "zip" : "tar.gz"}`);
+  const uploaded = /release_assets=\(\n([\s\S]*?)\n\s+\)/.exec(job("build", "publish-npm"))?.[1].trim().split(/\s+/);
+  assert.deepEqual(uploaded?.sort(), expected.sort());
+  for (const pattern of [
+    /--outfile "\$OUTPUT_DIR\/\$platform\/p\.exe"/,
+    /--outfile "\$OUTPUT_DIR\/\$platform\/p"$/m,
+    /zip -r \.\.\/p-\$platform\.zip \./,
+    /mv "\$platform" p && tar -czf p-\$platform\.tar\.gz p && mv p "\$platform"/,
+  ]) {
+    assert.match(binaryBuildScript, pattern);
+  }
+  assert.doesNotMatch(binaryBuildScript, /\bpi-\$platform|\/pi(?:\.exe)?"/);
+});
+
 test("validation skips optional local LLM tests only when Ollama is unavailable", () => {
   const validate = job("validate", "build");
   const testStart = validate.indexOf("name: Test all, including configured live tests");

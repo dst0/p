@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Test-only: covers p update --self on an installation no package manager manages (manual-update instruction, no install, exit code 1); no runtime behavior change."
+}

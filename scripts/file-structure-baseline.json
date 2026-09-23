@@ -465,7 +465,7 @@
   },
   "packages/coding-agent/test/config.test.ts": {
     "classes": 0,
-    "lines": 454
+    "lines": 379
   },
   "packages/coding-agent/test/extensions-discovery.test.ts": {
     "classes": 0,
@@ -513,7 +513,7 @@
   },
   "packages/coding-agent/test/package-command-paths.test.ts": {
     "classes": 0,
-    "lines": 594
+    "lines": 440
   },
   "packages/coding-agent/test/package-manager.test.ts": {
     "classes": 1,

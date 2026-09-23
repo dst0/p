@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Replace a require() call on a TypeScript source file in test/indexing-version.test.ts with a static import; the CJS-interop reload was producing a second, differently-shaped compiled script under the same file URL, which corrupted @bcoe/v8-coverage's cross-file merge of src/config/install-paths.ts and silently zeroed its changed-line coverage in the full test:coverage run."
+}

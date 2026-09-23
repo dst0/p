@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ENV_AGENT_DIR, PACKAGE_NAME, VERSION } from "../src/config.ts";
+import { ENV_AGENT_DIR, PACKAGE_NAME } from "../src/config.ts";
 import { ProjectTrustStore } from "../src/core/trust-manager.ts";
 import { main } from "../src/main.ts";
 
@@ -16,11 +16,6 @@ describe("package commands", () => {
   let originalPiPackageDir: string | undefined;
   let originalExitCode: typeof process.exitCode;
   let originalExecPath: string;
-
-  function getNewerPatchVersion(): string {
-    const [major = "0", minor = "0", patch = "0"] = VERSION.split(".");
-    return `${major}.${minor}.${Number.parseInt(patch, 10) + 1}`;
-  }
 
   beforeEach(() => {
     tempDir = join(tmpdir(), `pi-package-commands-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -413,155 +408,6 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
       expect(recordedArgs).toContain(globalPrefix);
       expect(recordedArgs).toContain(PACKAGE_NAME);
       expect(recordedArgs).not.toContain(projectPrefix);
-    } finally {
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("uses the current package name when the update check omits packageName", async () => {
-    const globalPrefix = join(tempDir, "global-prefix");
-    const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-    const fakeNpmPath = join(tempDir, "fake-npm.cjs");
-    const recordPath = join(tempDir, "self-update.json");
-    mkdirSync(selfPackageDir, { recursive: true });
-    writeFileSync(
-      fakeNpmPath,
-      `const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
-if(args.includes("root")) console.log(path.join(prefix,"lib","node_modules"));
-else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
-`,
-    );
-    writeFileSync(
-      join(agentDir, "settings.json"),
-      JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
-    );
-    process.env.P_PACKAGE_DIR = selfPackageDir;
-    Object.defineProperty(process, "execPath", {
-      value: join(selfPackageDir, "dist", "cli.js"),
-      configurable: true,
-    });
-    const fetchMock = vi.fn(async () => Response.json({ version: getNewerPatchVersion() }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      await expect(main(["update", "--self"])).resolves.toBeUndefined();
-
-      expect(process.exitCode).toBeUndefined();
-      expect(errorSpy).not.toHaveBeenCalled();
-      expect(fetchMock).toHaveBeenCalledOnce();
-      const recordedArgs = JSON.parse(readFileSync(recordPath, "utf-8")) as string[];
-      expect(recordedArgs).toContain(PACKAGE_NAME);
-    } finally {
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("installs the active package name from the update check during self-update", async () => {
-    const globalPrefix = join(tempDir, "global-prefix");
-    const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-    const fakeNpmPath = join(tempDir, "fake-npm.cjs");
-    const recordPath = join(tempDir, "self-update.json");
-    mkdirSync(selfPackageDir, { recursive: true });
-    writeFileSync(
-      fakeNpmPath,
-      `const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
-if(args.includes("root")) console.log(path.join(prefix,"lib","node_modules"));
-else {
-	const records=fs.existsSync(${JSON.stringify(recordPath)})?JSON.parse(fs.readFileSync(${JSON.stringify(recordPath)},"utf-8")):[];
-	records.push(args);
-	fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(records));
-}
-`,
-    );
-    writeFileSync(
-      join(agentDir, "settings.json"),
-      JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
-    );
-    process.env.P_PACKAGE_DIR = selfPackageDir;
-    Object.defineProperty(process, "execPath", {
-      value: join(selfPackageDir, "dist", "cli.js"),
-      configurable: true,
-    });
-    const activePackageName = PACKAGE_NAME === "@new-scope/pi" ? "@newer-scope/pi" : "@new-scope/pi";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ packageName: activePackageName, version: "0.73.0" })),
-    );
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      await expect(main(["update", "--self"])).resolves.toBeUndefined();
-
-      expect(process.exitCode).toBeUndefined();
-      expect(errorSpy).not.toHaveBeenCalled();
-      const recordedCalls = JSON.parse(readFileSync(recordPath, "utf-8")) as string[][];
-      expect(recordedCalls).toEqual([
-        expect.arrayContaining(["uninstall", "-g", PACKAGE_NAME]),
-        expect.arrayContaining(["install", "-g", activePackageName]),
-      ]);
-    } finally {
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("fails self-update when renamed npm package installation fails", async () => {
-    const globalPrefix = join(tempDir, "global-prefix");
-    const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-    const fakeNpmPath = join(tempDir, "fake-npm-fail.cjs");
-    const recordPath = join(tempDir, "self-update-fail.json");
-    mkdirSync(selfPackageDir, { recursive: true });
-    writeFileSync(
-      fakeNpmPath,
-      `const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
-if(args.includes("root")) {
-	console.log(path.join(prefix,"lib","node_modules"));
-	process.exit(0);
-}
-const records=fs.existsSync(${JSON.stringify(recordPath)})?JSON.parse(fs.readFileSync(${JSON.stringify(recordPath)},"utf-8")):[];
-records.push(args);
-fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(records));
-if(args.includes("install")) process.exit(23);
-`,
-    );
-    writeFileSync(
-      join(agentDir, "settings.json"),
-      JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
-    );
-    process.env.P_PACKAGE_DIR = selfPackageDir;
-    Object.defineProperty(process, "execPath", {
-      value: join(selfPackageDir, "dist", "cli.js"),
-      configurable: true,
-    });
-    const activePackageName = PACKAGE_NAME === "@new-scope/pi" ? "@newer-scope/pi" : "@new-scope/pi";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ packageName: activePackageName, version: "0.73.0" })),
-    );
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      await expect(main(["update", "--self"])).resolves.toBeUndefined();
-
-      expect(process.exitCode).toBe(1);
-      const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-      const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
-      expect(stdout).not.toContain(`Updated pi`);
-      expect(stderr).toContain("exited with code 23");
-      const recordedCalls = JSON.parse(readFileSync(recordPath, "utf-8")) as string[][];
-      expect(recordedCalls).toEqual([
-        expect.arrayContaining(["uninstall", "-g", PACKAGE_NAME]),
-        expect.arrayContaining(["install", "-g", activePackageName]),
-      ]);
     } finally {
       logSpy.mockRestore();
       errorSpy.mockRestore();

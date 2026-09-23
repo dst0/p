@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Point standalone-binary update instructions at https://github.com/dst0/p/releases/latest instead of the nonexistent dst0/p-mono repository."
+}

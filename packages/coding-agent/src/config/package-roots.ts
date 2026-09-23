@@ -6,17 +6,22 @@ import {
   getInferredNpmInstall,
   getPackageDir,
   makeSelfUpdateCommand,
-  makeSelfUpdateCommandStep,
   readCommandOutput,
 } from "./self-update.ts";
 import type { InstallMethod, SelfUpdateCommand } from "./types.ts";
 
+/**
+ * Builds the in-place reinstall command for `packageName`; self-update never switches to another package.
+ * `version` must already be validated semver (it comes from the registry check); it pins package-manager
+ * installs so a lagging mirror cannot silently reinstall an older release. Source checkouts are never pinned.
+ */
 export function getSelfUpdateCommandForMethod(
   method: InstallMethod,
-  installedPackageName: string,
-  updatePackageName = installedPackageName,
+  packageName: string,
   npmCommand?: string[],
+  version?: string,
 ): SelfUpdateCommand | undefined {
+  const installSpec = version ? `${packageName}@${version}` : packageName;
   switch (method) {
     case "bun-binary":
       return undefined;
@@ -28,62 +33,34 @@ export function getSelfUpdateCommandForMethod(
         ? [`--config.global-bin-dir=${process.env.PNPM_HOME || dirname(dirname(match[1]))}`]
         : [];
       return makeSelfUpdateCommand(
-        makeSelfUpdateCommandStep("pnpm", [
-          "install",
-          "-g",
-          "--ignore-scripts",
-          "--config.minimumReleaseAge=0",
-          ...binDirArgs,
-          updatePackageName,
-        ]),
-        updatePackageName === installedPackageName
-          ? undefined
-          : makeSelfUpdateCommandStep("pnpm", ["remove", "-g", ...binDirArgs, installedPackageName]),
+        "pnpm",
+        ["install", "-g", "--ignore-scripts", "--config.minimumReleaseAge=0", ...binDirArgs, installSpec],
+        version,
       );
     }
     case "yarn":
-      return makeSelfUpdateCommand(
-        makeSelfUpdateCommandStep("yarn", ["global", "add", "--ignore-scripts", updatePackageName]),
-        updatePackageName === installedPackageName
-          ? undefined
-          : makeSelfUpdateCommandStep("yarn", ["global", "remove", installedPackageName]),
-      );
+      return makeSelfUpdateCommand("yarn", ["global", "add", "--ignore-scripts", installSpec], version);
     case "bun":
       return makeSelfUpdateCommand(
-        makeSelfUpdateCommandStep("bun", [
-          "install",
-          "-g",
-          "--ignore-scripts",
-          "--minimum-release-age=0",
-          updatePackageName,
-        ]),
-        updatePackageName === installedPackageName
-          ? undefined
-          : makeSelfUpdateCommandStep("bun", ["uninstall", "-g", installedPackageName]),
+        "bun",
+        ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", installSpec],
+        version,
       );
     case "npm": {
       const [command = "npm", ...npmArgs] = npmCommand ?? [];
       const inferred = npmCommand?.length ? undefined : getInferredNpmInstall();
       const prefixArgs = [...npmArgs, ...(inferred ? ["--prefix", inferred.prefix] : [])];
-      const installStep = makeSelfUpdateCommandStep(command, [
-        ...prefixArgs,
-        "install",
-        "-g",
-        "--ignore-scripts",
-        "--min-release-age=0",
-        updatePackageName,
-      ]);
-      const uninstallStep =
-        updatePackageName === installedPackageName
-          ? undefined
-          : makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
-      return makeSelfUpdateCommand(installStep, uninstallStep);
+      return makeSelfUpdateCommand(
+        command,
+        [...prefixArgs, "install", "-g", "--ignore-scripts", "--min-release-age=0", installSpec],
+        version,
+      );
     }
     case "source-checkout": {
       const packageDir = getPackageDir();
       const gitRoot = findGitRoot(packageDir);
       if (!gitRoot) return undefined;
-      return makeSelfUpdateCommandStep("bash", ["-c", `cd ${gitRoot} && git pull && npm run build`]);
+      return makeSelfUpdateCommand("bash", ["-c", `cd ${gitRoot} && git pull && npm run build`]);
     }
     case "unknown":
       return undefined;

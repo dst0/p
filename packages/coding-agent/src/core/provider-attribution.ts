@@ -43,7 +43,7 @@ function getDefaultAttributionHeaders(
 
   if (isOpenRouterModel(model)) {
     return {
-      "HTTP-Referer": "https://p.dev",
+      "HTTP-Referer": "https://p-agent.pages.dev",
       "X-OpenRouter-Title": "p",
       "X-OpenRouter-Categories": "cli-agent",
     };
