@@ -55,7 +55,9 @@ export async function do_buildIndexStatusText(
       ? theme.fg("success", "enabled")
       : status.decision === "disabled"
         ? theme.fg("error", "disabled")
-        : theme.fg("warning", "not configured");
+        : status.inheritedFrom
+          ? theme.fg("warning", `inherits main checkout (not indexed): ${status.inheritedFrom}`)
+          : theme.fg("warning", "not configured");
   text += `Indexing: ${decision}\n`;
   text += `Background service: ${status.serviceRunning ? theme.fg("success", "running") : theme.fg("error", "not running")}\n`;
   if (status.configuredDevice) {

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +6,15 @@ import { getIndexedReposPath } from "../src/core/indexed-repos.ts";
 import { IndexingService } from "../src/core/indexing-service.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+
+const { execFileSyncSpy, execSyncSpy } = vi.hoisted(() => ({ execFileSyncSpy: vi.fn(), execSyncSpy: vi.fn() }));
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  execFileSyncSpy.mockImplementation(actual.execFileSync);
+  execSyncSpy.mockImplementation(actual.execSync);
+  return { ...actual, execFileSync: execFileSyncSpy, execSync: execSyncSpy };
+});
 
 type IndexingPromptContext = {
   sessionManager: { getCwd: () => string };
@@ -27,7 +35,8 @@ afterEach(() => {
 });
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const result = execFileSyncSpy("git", args, { cwd, encoding: "utf8" }) as string;
+  return result.trim();
 }
 
 function createRealRepo(repo: string): void {
@@ -55,7 +64,7 @@ function makeContext(
 describe("indexing decision inheritance for linked git worktrees", () => {
   beforeAll(() => initTheme("dark"));
 
-  it("inherits an enabled decision from the main worktree without prompting, and requests background indexing", async () => {
+  it("inherits an enabled main-checkout decision: no modal, and the worktree is not indexed", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-worktree-enabled-"));
     temporaryDirectories.push(root);
     const agentDir = path.join(root, "agent");
@@ -71,18 +80,20 @@ describe("indexing decision inheritance for linked git worktrees", () => {
     await interactiveModePrototype.promptForCodeIndexingIfNeeded.call(context);
 
     expect(context.showExtensionSelector).not.toHaveBeenCalled();
-    expect(indexingService.getDecision(worktree)).toBe("enabled");
+    // The worktree's own decision stays "unknown" — inheritance only suppresses the prompt,
+    // it never persists a decision or auto-indexes the worktree (each worktree would be
+    // fully re-embedded, and short-lived worktrees would leave stale registry entries).
+    expect(indexingService.getDecision(worktree)).toBe("unknown");
+    const status = indexingService.getStatus(worktree);
+    expect(status.indexed).toBe(false);
+    expect(status.inheritedFrom).toBe(fs.realpathSync(mainRepo));
     const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf8")) as {
-      repos: Array<{ path: string; decision: string }>;
+      repos: Array<{ path: string }>;
     };
-    // A persisted "enabled" entry for the worktree's own path is what makes the indexing
-    // daemon pick it up and start indexing it in the background (see status-monitoring.ts).
-    expect(stored.repos).toEqual(
-      expect.arrayContaining([expect.objectContaining({ path: fs.realpathSync(worktree), decision: "enabled" })]),
-    );
+    expect(stored.repos.map((entry) => entry.path)).toEqual([fs.realpathSync(mainRepo)]);
   });
 
-  it("inherits a disabled decision from the main worktree without prompting or indexing", async () => {
+  it("inherits a disabled main-checkout decision: no modal, and the worktree is not indexed", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-worktree-disabled-"));
     temporaryDirectories.push(root);
     const agentDir = path.join(root, "agent");
@@ -98,7 +109,14 @@ describe("indexing decision inheritance for linked git worktrees", () => {
     await interactiveModePrototype.promptForCodeIndexingIfNeeded.call(context);
 
     expect(context.showExtensionSelector).not.toHaveBeenCalled();
-    expect(indexingService.getDecision(worktree)).toBe("disabled");
+    expect(indexingService.getDecision(worktree)).toBe("unknown");
+    const status = indexingService.getStatus(worktree);
+    expect(status.indexed).toBe(false);
+    expect(status.inheritedFrom).toBe(fs.realpathSync(mainRepo));
+    const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf8")) as {
+      repos: Array<{ path: string }>;
+    };
+    expect(stored.repos.map((entry) => entry.path)).toEqual([fs.realpathSync(mainRepo)]);
   });
 
   it("still prompts for a repository that is not a linked worktree", async () => {
@@ -141,5 +159,61 @@ describe("indexing decision inheritance for linked git worktrees", () => {
     await interactiveModePrototype.promptForCodeIndexingIfNeeded.call(context);
 
     expect(context.showExtensionSelector).toHaveBeenCalledOnce();
+  });
+
+  it("still lets an explicit /index enable on the worktree persist its own decision", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-worktree-explicit-enable-"));
+    temporaryDirectories.push(root);
+    const agentDir = path.join(root, "agent");
+    const mainRepo = path.join(root, "main");
+    createRealRepo(mainRepo);
+    const worktree = path.join(root, "feature");
+    git(mainRepo, "worktree", "add", "-q", worktree, "-b", "feature");
+
+    const indexingService = new IndexingService(agentDir);
+    indexingService.disableIndexing(mainRepo);
+    // Simulates the user running `/index enable` from inside the worktree session.
+    indexingService.enableIndexing(worktree);
+
+    expect(indexingService.getDecision(worktree)).toBe("enabled");
+    const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf8")) as {
+      repos: Array<{ path: string; decision: string }>;
+    };
+    expect(stored.repos).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: fs.realpathSync(worktree), decision: "enabled" })]),
+    );
+  });
+
+  it("resolves the main worktree and its decision at most once per process despite repeated polling", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-worktree-cache-"));
+    temporaryDirectories.push(root);
+    const agentDir = path.join(root, "agent");
+    const mainRepo = path.join(root, "main");
+    createRealRepo(mainRepo);
+    const worktree = path.join(root, "feature");
+    git(mainRepo, "worktree", "add", "-q", worktree, "-b", "feature");
+
+    const indexingService = new IndexingService(agentDir);
+    indexingService.enableIndexing(mainRepo);
+
+    execFileSyncSpy.mockClear();
+    execSyncSpy.mockClear();
+
+    // Simulate the footer's 500ms indexing-status poll calling getStatus() (which calls
+    // getDecision() internally) many times in a row for the same worktree.
+    for (let i = 0; i < 5; i += 1) {
+      indexingService.getDecision(worktree);
+      indexingService.getStatus(worktree);
+    }
+
+    const gitCommonDirCalls = execFileSyncSpy.mock.calls.filter(
+      (call) => Array.isArray(call[1]) && (call[1] as string[]).includes("--git-common-dir"),
+    );
+    expect(gitCommonDirCalls).toHaveLength(1);
+
+    const mainRemoteLookupCalls = execSyncSpy.mock.calls.filter(
+      (call) => (call[1] as { cwd?: string } | undefined)?.cwd === fs.realpathSync(mainRepo),
+    );
+    expect(mainRemoteLookupCalls).toHaveLength(1);
   });
 });

@@ -165,7 +165,8 @@ export async function do_promptForMissingSessionCwd(
 
 export async function do_promptForCodeIndexingIfNeeded(self: InteractiveMode): Promise<void> {
   const workspaceRoot = findIndexWorkspaceRoot(self.sessionManager.getCwd());
-  if (self.indexingService.getDecision(workspaceRoot) !== "unknown") return;
+  const decisionInfo = self.indexingService.resolveDecision(workspaceRoot);
+  if (decisionInfo.decision !== "unknown" || decisionInfo.inheritedFrom !== undefined) return;
   const answer = await self.showExtensionSelector("Code indexing", [
     `Yes — index ${workspaceRoot} and keep it updated in the background`,
     "No — do not ask again for this repository",
