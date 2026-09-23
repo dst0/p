@@ -10,6 +10,7 @@ import {
   type RepoIndexingDecision,
 } from "./indexed-repos.ts";
 import { readIndexingSelectionConfiguration } from "./indexing-config-reader.ts";
+import { findMainWorktreePath } from "./workspace-root.ts";
 
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
 export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
@@ -80,7 +81,15 @@ export class IndexingService {
   }
 
   getDecision(workspaceRoot: string): RepoIndexingDecision {
-    return getRepoIndexingDecision(workspaceRoot, this.agentDir);
+    const decision = getRepoIndexingDecision(workspaceRoot, this.agentDir);
+    if (decision !== "unknown") return decision;
+    const mainWorktree = findMainWorktreePath(workspaceRoot);
+    if (!mainWorktree) return "unknown";
+    const inherited = getRepoIndexingDecision(mainWorktree, this.agentDir);
+    if (inherited === "unknown") return "unknown";
+    if (inherited === "enabled") enableIndexingForRepo(workspaceRoot, this.agentDir);
+    else disableIndexingForRepo(workspaceRoot, this.agentDir);
+    return inherited;
   }
 
   getStatus(workspaceRoot: string): IndexStatus {
