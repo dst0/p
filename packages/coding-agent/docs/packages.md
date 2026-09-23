@@ -133,7 +133,7 @@ Paths are relative to the package root. Arrays support glob patterns and `!exclu
 
 ### Gallery Metadata
 
-The [package gallery](https://p.pages.dev/packages) displays packages tagged with `p-package`. Add `video` or `image` fields to show a preview:
+The [package gallery](https://p-agent.pages.dev/packages) displays packages tagged with `p-package`. Add `video` or `image` fields to show a preview:
 
 ```json
 {

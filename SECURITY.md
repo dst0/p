@@ -43,7 +43,7 @@ reports and coordinate disclosure as appropriate.
 
 Security issues in the distributed packages, command-line tools, APIs, and
 repository code are in scope as well as infrastructure operated at
-`p.pages.dev`.
+`p-agent.pages.dev`.
 
 ## Out Of Scope
 

@@ -3,25 +3,14 @@ import { basename, dirname, join, win32 } from "path";
 import { spawnProcessSync } from "../utils/child-process.ts";
 import { normalizePath } from "../utils/paths.ts";
 import { __dirname, isBunBinary, isBunRuntime } from "./constants.ts";
-import type { InstallMethod, SelfUpdateCommand, SelfUpdateCommandStep } from "./types.ts";
+import type { InstallMethod, SelfUpdateCommand } from "./types.ts";
 
-export function makeSelfUpdateCommand(
-  installStep: SelfUpdateCommandStep,
-  uninstallStep?: SelfUpdateCommandStep,
-): SelfUpdateCommand {
-  if (!uninstallStep) return installStep;
-  return {
-    ...installStep,
-    display: `${uninstallStep.display} && ${installStep.display}`,
-    steps: [uninstallStep, installStep],
-  };
-}
-
-export function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateCommandStep {
+export function makeSelfUpdateCommand(command: string, args: string[], pinnedVersion?: string): SelfUpdateCommand {
   return {
     command,
     args,
     display: [command, ...args].map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" "),
+    ...(pinnedVersion ? { pinnedVersion } : {}),
   };
 }
 

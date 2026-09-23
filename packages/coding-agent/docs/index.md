@@ -14,13 +14,15 @@ npm install -g --ignore-scripts @dst0/p
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. p does not require install scripts for normal npm installs.
 
-On Linux or macOS, you can also use the installer:
+To build and link p from a source checkout instead, run `./install.sh` from the checkout. It installs missing prerequisites (git, build tools, Python 3.12+, Node.js 22) and then runs `reinstall.sh`:
 
 ```bash
-curl -fsSL https://p.pages.dev/install.sh | sh
+git clone https://github.com/dst0/p.git
+cd p
+./install.sh
 ```
 
-To uninstall p itself, use npm for curl and npm installs:
+To uninstall p itself, use npm for npm installs:
 
 ```bash
 npm uninstall -g @dst0/p

@@ -1,13 +1,11 @@
 export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "source-checkout" | "unknown";
 
-export interface SelfUpdateCommandStep {
+export interface SelfUpdateCommand {
   command: string;
   args: string[];
   display: string;
-}
-
-export interface SelfUpdateCommand extends SelfUpdateCommandStep {
-  steps?: SelfUpdateCommandStep[];
+  /** Semver the command installs; set only when the update check produced a validated version. */
+  pinnedVersion?: string;
 }
 
 export interface PackageJson {
