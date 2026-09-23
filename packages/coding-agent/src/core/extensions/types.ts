@@ -471,6 +471,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
   promptSnippet?: string;
   /** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
   promptGuidelines?: string[];
+  /** Opts out of LIGHT/`tools.deferExtensionTools` deferral (e.g. memory/supervisor-style tools). */
+  alwaysActive?: boolean;
   /** Parameter schema (TypeBox) */
   parameters: TParams;
   /** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */

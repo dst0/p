@@ -49,19 +49,21 @@ export interface ToolActivationCandidate {
   /** Tool registry source, e.g. "builtin", "extension", "mcp", "sdk". */
   source: string;
   hasPromptSnippet: boolean;
+  /** ToolDefinition.alwaysActive: opts a tool out of deferral entirely. */
+  alwaysActive?: boolean;
 }
 
 /**
  * Non-builtin tools with a promptSnippet defer like `LIGHT_DEFERRED_TOOL_NAMES` while LIGHT: they stay
  * registered and findable via tool_search, but do not auto-activate or inject their snippet into the
- * system prompt. Reserved names (the verification control plane) never defer.
+ * system prompt. Reserved names (the verification control plane) and `alwaysActive` tools never defer.
  */
 export function deferrableExtensionToolNames(
   candidates: readonly ToolActivationCandidate[],
   reservedNames: ReadonlySet<string>,
 ): string[] {
   return candidates
-    .filter((candidate) => candidate.source !== "builtin" && candidate.hasPromptSnippet)
+    .filter((candidate) => candidate.source !== "builtin" && candidate.hasPromptSnippet && !candidate.alwaysActive)
     .map((candidate) => candidate.name)
     .filter((name) => !reservedNames.has(name));
 }

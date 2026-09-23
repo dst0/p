@@ -156,6 +156,8 @@ export function do__createToolSearchToolDefinition(
         : [];
       const queryMatches = rankedMatches.map(({ name }) => name);
       const activated = [...new Set([...exactMatches, ...queryMatches])].slice(0, 8);
+      // Sticky by design: once activated here, a tool stays active for the rest of the session (it is
+      // not re-deferred by a later tier change or refresh) until explicitly deactivated elsewhere.
       if (activated.length > 0) {
         self.setActiveToolsByName([...activeNames, ...activated]);
       }

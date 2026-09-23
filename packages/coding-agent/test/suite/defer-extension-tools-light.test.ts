@@ -13,7 +13,11 @@ const WIDGET_SNIPPET = "widget_lookup(id): fetch widget metadata from the catalo
 /** A weakly-described tool: nothing in its text hints at what it does, only its exact name does. */
 const OBSCURE_TOOL_NAME = "zzq_util7";
 
-/** Registers two extension tools with a promptSnippet, gated behind session_start like a real MCP wrapper. */
+/** A supervisor-style tool that opts out of deferral via alwaysActive. */
+const ALWAYS_ACTIVE_TOOL_NAME = "supervisor_ping";
+const ALWAYS_ACTIVE_SNIPPET = "supervisor_ping(): heartbeat check-in";
+
+/** Registers extension tools with a promptSnippet, gated behind session_start like a real MCP wrapper. */
 const catalogExtension: ExtensionFactory = (pi) => {
   pi.on("session_start", () => {
     pi.registerTool({
@@ -34,6 +38,15 @@ const catalogExtension: ExtensionFactory = (pi) => {
       promptSnippet: "zzq_util7(): does a thing",
       parameters: Type.Object({}),
       execute: async () => ({ content: [{ type: "text", text: "done" }], details: {} }),
+    });
+    pi.registerTool({
+      name: ALWAYS_ACTIVE_TOOL_NAME,
+      label: "Supervisor Ping",
+      description: "Always-on heartbeat tool that must stay active every turn",
+      promptSnippet: ALWAYS_ACTIVE_SNIPPET,
+      alwaysActive: true,
+      parameters: Type.Object({}),
+      execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
     });
   });
 };
@@ -102,6 +115,10 @@ describe("defer extension tools while LIGHT", () => {
     expect(firstRequests[0]?.tools.map((tool) => tool.name)).not.toContain(WIDGET_TOOL_NAME);
     expect(firstRequests[0]?.systemPrompt).not.toContain(WIDGET_SNIPPET);
     expect(firstRequests[0]?.systemPrompt).not.toContain(WIDGET_DESCRIPTION);
+    // Deferred tools still show up in a compact catalog (name + truncated description), so the model
+    // knows to tool_search for them instead of assuming they don't exist.
+    expect(firstRequests[0]?.systemPrompt).toContain(`${WIDGET_TOOL_NAME} — ${WIDGET_DESCRIPTION.slice(0, 60)}`);
+    expect(firstRequests[0]?.systemPrompt).toContain(`${OBSCURE_TOOL_NAME} — Does a thing.`);
 
     const secondRequests = captureRequests(
       harness,
@@ -118,6 +135,12 @@ describe("defer extension tools while LIGHT", () => {
     const widgetCall = harness.eventsOfType("tool_execution_end").find((event) => event.toolName === WIDGET_TOOL_NAME);
     expect(widgetCall?.isError).toBe(false);
     expect(JSON.stringify(widgetCall?.result.content)).toContain("widget:42");
+
+    // Sticky by design: a tool activated via tool_search stays active for later LIGHT turns too.
+    const thirdRequests = captureRequests(harness, fauxAssistantMessage("Nothing else to do."));
+    await harness.session.prompt("Anything else?");
+    expect(harness.session.getVerificationTierStatus()?.tier).toBe("light");
+    expect(thirdRequests[0]?.tools.map((tool) => tool.name)).toContain(WIDGET_TOOL_NAME);
   });
 
   it("keeps the tool active from turn 1 under STRICT", async () => {
@@ -128,6 +151,38 @@ describe("defer extension tools while LIGHT", () => {
     expect(harness.session.getVerificationTierStatus()?.tier).toBe("strict");
     expect(harness.session.getActiveToolNames()).toContain(WIDGET_TOOL_NAME);
     expect(harness.session.systemPrompt).toContain(WIDGET_SNIPPET);
+  });
+
+  it("defers even under STRICT when the setting is 'always', until tool_search activates it", async () => {
+    const harness = await createHarness({
+      taskVerificationMode: "strict",
+      extensionFactories: [catalogExtension],
+      settings: { tools: { deferExtensionTools: "always" } },
+    });
+    harnesses.push(harness);
+    await harness.session.bindExtensions({});
+
+    expect(harness.session.getVerificationTierStatus()?.tier).toBe("strict");
+    expect(harness.session.getActiveToolNames()).not.toContain(WIDGET_TOOL_NAME);
+    expect(harness.session.systemPrompt).not.toContain(WIDGET_SNIPPET);
+    expect(harness.session.systemPrompt).toContain(WIDGET_TOOL_NAME);
+
+    const requests = captureRequests(
+      harness,
+      toolMessage(fauxToolCall("tool_search", { names: [WIDGET_TOOL_NAME] })),
+      fauxAssistantMessage("Found it."),
+    );
+    await harness.session.prompt("Look up widget 1 in the catalog.");
+    expect(harness.session.getActiveToolNames()).toContain(WIDGET_TOOL_NAME);
+    expect(requests[1]?.tools.map((tool) => tool.name)).toContain(WIDGET_TOOL_NAME);
+  });
+
+  it("keeps an alwaysActive tool active while sibling extension tools defer under LIGHT", async () => {
+    const harness = await setup();
+
+    expect(harness.session.getActiveToolNames()).toContain(ALWAYS_ACTIVE_TOOL_NAME);
+    expect(harness.session.getActiveToolNames()).not.toContain(WIDGET_TOOL_NAME);
+    expect(harness.session.systemPrompt).toContain(ALWAYS_ACTIVE_SNIPPET);
   });
 
   it("restores today's behavior when the setting is 'never'", async () => {

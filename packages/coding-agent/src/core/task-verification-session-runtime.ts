@@ -259,6 +259,7 @@ export function installTaskVerificationRuntime(session: AgentSession, runtime: P
                     name,
                     source: session._toolDefinitions.get(name)?.sourceInfo.source ?? "builtin",
                     hasPromptSnippet: session._toolPromptSnippets.has(name),
+                    alwaysActive: session._toolDefinitions.get(name)?.definition.alwaysActive === true,
                   })),
                   managedToolNames,
                 )

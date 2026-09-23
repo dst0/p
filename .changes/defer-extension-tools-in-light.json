@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "packages": ["coding-agent"],
   "type": "Changed",
-  "summary": "Defer extension/MCP tool auto-activation to `tool_search` while the LIGHT verification tier is active, instead of always injecting every promptSnippet tool's schema and snippet into the system prompt; configurable via `tools.deferExtensionTools` (`light` default, `always`, `never`)."
+  "summary": "Defer extension/MCP tool auto-activation to `tool_search` while the LIGHT verification tier is active, instead of always injecting every promptSnippet tool's schema and snippet into the system prompt; deferred tools still appear in a compact name/description catalog, configurable via `tools.deferExtensionTools` (`light` default, `always`, `never`), and a tool can opt out entirely with `alwaysActive: true`."
 }

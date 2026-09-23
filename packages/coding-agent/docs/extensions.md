@@ -1302,6 +1302,8 @@ Use `promptSnippet` to opt a custom tool into a one-line entry in `Available too
 
 **Important:** `promptGuidelines` bullets are appended flat to the `Guidelines` section with no tool name prefix. Each guideline must name the tool it refers to — avoid "Use this tool when..." because the LLM cannot tell which tool "this" means. Write "Use my_tool when..." instead.
 
+**Deferral:** a tool with `promptSnippet` normally auto-activates, but while the session is in the LIGHT verification tier (or when the user sets `tools.deferExtensionTools: "always"`), it instead stays registered-but-inactive and is only activated on demand via `tool_search`, to keep the default prompt small. Set `alwaysActive: true` on the definition to opt a tool out of this deferral — use it for a tool the model is expected to consult unprompted on most turns (e.g. a memory or supervisor-style tool), not as a general way to keep a tool's schema always loaded.
+
 See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full example.
 
 ```typescript
@@ -1754,6 +1756,8 @@ Use `promptSnippet` for a short one-line entry in the `Available tools` section 
 Use `promptGuidelines` to add tool-specific bullets to the default system prompt `Guidelines` section. These bullets are included only while the tool is active (for example, after `p.setActiveTools([...])`).
 
 **Important:** `promptGuidelines` bullets are appended flat to the `Guidelines` section with no tool name prefix or grouping. Each guideline must name the tool it refers to — avoid "Use this tool when..." because the LLM cannot tell which tool "this" means. Write "Use my_tool when..." instead.
+
+By default, a `promptSnippet` tool is deferred (registered but inactive, findable via `tool_search`) while the session is in the LIGHT verification tier, so it does not add to the default prompt's size until needed. Set `alwaysActive: true` to keep a tool active on every turn regardless of tier or the `tools.deferExtensionTools` setting.
 
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
