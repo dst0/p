@@ -8,6 +8,7 @@ import { LearningsStore } from "./learnings/learnings-store.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 import { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
+import { type DeferredToolCatalogEntry, formatDeferredToolsCatalog } from "./system-prompt/deferred-tools-catalog.ts";
 import { formatLightDocsPointer, LIGHT_GUIDELINES } from "./system-prompt/light-guidelines.ts";
 import { strictGuidelines } from "./system-prompt/strict-guidelines.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
@@ -43,6 +44,8 @@ export interface BuildSystemPromptOptions {
   verificationTier?: VerificationTier;
   /** Auto policy: a task that changes nothing may end with plain text even in explicit mode. */
   zeroEffectTextCompletion?: boolean;
+  /** Deferred (registered but inactive) extension/MCP tools, listed compactly so the model knows to tool_search for them. */
+  deferredTools?: DeferredToolCatalogEntry[];
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -61,7 +64,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     taskVerificationMode,
     verificationTier,
     zeroEffectTextCompletion,
+    deferredTools,
   } = options;
+  const deferredToolsCatalog = formatDeferredToolsCatalog(deferredTools ?? []);
   const resolvedCwd = cwd;
   const promptCwd = resolvedCwd.replace(/\\/g, "/");
 
@@ -178,7 +183,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 Available tools:
 ${toolsList}
 
-Other project-specific custom tools may also be available.
+Other project-specific custom tools may also be available.${
+    deferredToolsCatalog
+      ? `\n\nDeferred to save context — activate with tool_search(names: [...]) before use, then it stays active for the session:\n${deferredToolsCatalog}`
+      : ""
+  }
 
 Guidelines:
 ${guidelines}

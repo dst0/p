@@ -329,7 +329,7 @@
   },
   "packages/coding-agent/src/core/extensions/types.ts": {
     "classes": 0,
-    "lines": 1635
+    "lines": 1443
   },
   "packages/coding-agent/src/core/keybindings.ts": {
     "classes": 1,

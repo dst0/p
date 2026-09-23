@@ -94,6 +94,8 @@ describe("AgentSession dynamic tool registration", () => {
 
     expect(session.getAllTools().map((tool) => tool.name)).not.toContain("dynamic_tool");
 
+    // Registry refresh is under test here, not LIGHT deferral (covered by defer-extension-tools-light).
+    settingsManager.applyOverrides({ tools: { deferExtensionTools: "never" } });
     await session.bindExtensions({});
 
     const allTools = session.getAllTools();
@@ -115,7 +117,7 @@ describe("AgentSession dynamic tool registration", () => {
       origin: "top-level",
     });
     expect(session.getActiveToolNames()).toContain("tool_search");
-    // dynamic_tool has promptSnippet so it's auto-activated by default
+    // With deferral disabled, a promptSnippet tool is auto-activated
     expect(session.getActiveToolNames()).toContain("dynamic_tool");
     expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
     expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");

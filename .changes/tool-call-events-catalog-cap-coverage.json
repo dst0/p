@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Add table-driven tests for the ToolResultEvent/ToolCallEvent type guards in extensions/tool-call-events.ts and a names-only-overflow test for formatDeferredToolsCatalog's ~600-char cap, closing changed-line coverage gaps left by the extensions/types.ts split and the deferred-tools catalog; no runtime behavior change."
+}

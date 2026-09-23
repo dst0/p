@@ -3,6 +3,7 @@ import { wrapRegisteredTools } from "../../extensions/index.ts";
 import { createSyntheticSourceInfo } from "../../source-info.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../../task-verification.ts";
 import { assertReservedTaskVerificationToolNames } from "../../task-verification-session-runtime.ts";
+import { isLightTierActive } from "../../task-verification-tier-session.ts";
 import { BEGIN_CODE_TASK_TOOL_NAME } from "../../tools/begin-code-task.ts";
 import type { AgentSession } from "../agentsession.ts";
 import type { ToolDefinitionEntry } from "../session-types.ts";
@@ -107,12 +108,16 @@ export function do__refreshToolRegistry(
       }
     }
   } else {
-    // Always activate extension tools that have promptSnippet —
-    // providing a promptSnippet signals the tool should be visible in the system prompt's tool listing.
+    // Activate extension tools that have promptSnippet — providing a promptSnippet signals the tool
+    // should be visible in the system prompt's tool listing. Deferred while LIGHT (default policy) or
+    // always (setting override); deferred tools stay registered and findable via tool_search. A tool
+    // marked `alwaysActive` opts out of deferral regardless of tier or setting.
+    const deferPolicy = self.settingsManager.getDeferExtensionToolsPolicy();
+    const deferByDefault = deferPolicy === "always" || (deferPolicy === "light" && isLightTierActive(self));
     for (const tool of wrappedExtensionTools) {
-      if (self._toolPromptSnippets.has(tool.name) && !managedVerificationToolNames.has(tool.name)) {
-        nextActiveToolNames.push(tool.name);
-      }
+      if (!self._toolPromptSnippets.has(tool.name) || managedVerificationToolNames.has(tool.name)) continue;
+      const alwaysActive = self._toolDefinitions.get(tool.name)?.definition.alwaysActive === true;
+      if (!deferByDefault || alwaysActive) nextActiveToolNames.push(tool.name);
     }
     if (options?.includeAllExtensionTools) {
       for (const tool of wrappedExtensionTools) {

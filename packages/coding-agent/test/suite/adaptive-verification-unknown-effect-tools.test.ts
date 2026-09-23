@@ -45,7 +45,12 @@ describe("adaptive verification: unknown-effect tools", () => {
     const adaptive = await createAdaptiveHarness({ extensionFactories: [mcpLikeExtension] });
     harnesses.push(adaptive);
     adaptive.respond(
-      tools(fauxToolCall("bash", { command: "node -e \"console.log(require('os').cpus().length)\"" })),
+      // MCP-style tools with a promptSnippet defer to tool_search while LIGHT, so the first turn
+      // activates them alongside the read-only investigation itself.
+      tools(
+        fauxToolCall("bash", { command: "node -e \"console.log(require('os').cpus().length)\"" }),
+        fauxToolCall("tool_search", { names: ["web_search_exa", "secure_hub_workspace_task_write"] }),
+      ),
       tools(
         fauxToolCall("web_search_exa", { input: "M3 Max memory bandwidth" }),
         fauxToolCall("secure_hub_workspace_task_write", { input: "hardware findings recorded" }),
@@ -59,6 +64,8 @@ describe("adaptive verification: unknown-effect tools", () => {
 
     const session = adaptive.harness.session;
     expect(adaptive.requests).toHaveLength(3);
+    expect(adaptive.requests[0]?.toolNames).not.toContain("web_search_exa");
+    expect(adaptive.requests[1]?.toolNames).toEqual(expect.arrayContaining(["web_search_exa"]));
     expect(adaptive.requests.at(-1)?.toolNames).not.toContain("finish_work");
     expect(session.getVerificationTierStatus()).toMatchObject({ policy: "auto", tier: "light" });
     expect(adaptive.harness.eventsOfType("verification_tier_changed")).toEqual([]);
@@ -66,6 +73,7 @@ describe("adaptive verification: unknown-effect tools", () => {
     const toolResults = adaptive.harness.eventsOfType("tool_execution_end");
     expect(toolResults.map((event) => [event.toolName, event.isError])).toEqual([
       ["bash", false],
+      ["tool_search", false],
       ["web_search_exa", false],
       ["secure_hub_workspace_task_write", false],
     ]);
@@ -90,6 +98,8 @@ describe("adaptive verification: unknown-effect tools", () => {
       });
     });
     adaptive.respond(
+      // slow_tracker_update defers to tool_search while LIGHT; activate it before the racing edit.
+      tools(fauxToolCall("tool_search", { names: ["slow_tracker_update"] })),
       tools(
         fauxToolCall("write", { path: "src/a.js", content: "export const value = 2;\n" }),
         fauxToolCall("slow_tracker_update", { input: "value changed" }),
@@ -100,7 +110,7 @@ describe("adaptive verification: unknown-effect tools", () => {
     await adaptive.harness.session.prompt("Look at src/a.js.");
 
     const finished = adaptive.harness.eventsOfType("tool_execution_end").map((event) => event.toolName);
-    expect(finished.slice(0, 2)).toEqual(["write", "slow_tracker_update"]);
+    expect(finished.slice(0, 3)).toEqual(["tool_search", "write", "slow_tracker_update"]);
     expect(adaptive.harness.session.getVerificationTierStatus()?.reason).toBe("effect_source");
     const state = adaptive.harness.session._taskVerificationRuntime?.controller.state;
     expect(state?.mutationRevision).toBe(1);

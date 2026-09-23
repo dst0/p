@@ -5,7 +5,7 @@ import type { ToolDefinition } from "./extensions/index.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
-import { LIGHT_DEFERRED_TOOL_NAMES } from "./task-verification/task-tier.ts";
+import { deferrableExtensionToolNames, LIGHT_DEFERRED_TOOL_NAMES } from "./task-verification/task-tier.ts";
 import {
   resolveTaskVerificationConfiguration,
   type TaskVerificationConfiguration,
@@ -239,16 +239,32 @@ export function installTaskVerificationRuntime(session: AgentSession, runtime: P
     session._projectRuleSafeToolDefinitions.add(definition);
   }
   const activeToolNames = session.getActiveToolNames();
+  const managedToolNames = new Set(runtime.toolDefinitions.map((definition) => definition.name));
+  const deferExtensionTools =
+    session._allowedToolNames === undefined && session.settingsManager.getDeferExtensionToolsPolicy() === "light";
   const installedRuntime: InstalledTaskVerificationRuntime = {
     configuredMode: runtime.controller.mode as Exclude<TaskVerificationMode, "off">,
     controller: runtime.controller,
     enabled: runtime.effectiveMode !== "off",
-    managedToolNames: new Set(runtime.toolDefinitions.map((definition) => definition.name)),
+    managedToolNames,
     tier: runtime.tier,
     completionModeExplicit: runtime.completionModeExplicit,
     tierManagedToolNames:
       session._allowedToolNames === undefined
-        ? LIGHT_DEFERRED_TOOL_NAMES.filter((name) => activeToolNames.includes(name))
+        ? [
+            ...LIGHT_DEFERRED_TOOL_NAMES.filter((name) => activeToolNames.includes(name)),
+            ...(deferExtensionTools
+              ? deferrableExtensionToolNames(
+                  activeToolNames.map((name) => ({
+                    name,
+                    source: session._toolDefinitions.get(name)?.sourceInfo.source ?? "builtin",
+                    hasPromptSnippet: session._toolPromptSnippets.has(name),
+                    alwaysActive: session._toolDefinitions.get(name)?.definition.alwaysActive === true,
+                  })),
+                  managedToolNames,
+                )
+              : []),
+          ]
         : [],
     observedLedger: { ownedPaths: new Set(), sourcePaths: new Set(), mutationRevision: 0 },
   };

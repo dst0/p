@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Extract the tool call/result event types and their type guards from extensions/types.ts into extensions/tool-call-events.ts (re-exported unchanged), bringing types.ts back under its file-structure baseline instead of growing it; no public API or runtime behavior change."
+}

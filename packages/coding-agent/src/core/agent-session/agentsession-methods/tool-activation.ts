@@ -151,6 +151,19 @@ export function do__rebuildSystemPrompt(
     toolSnippets[FINISH_WORK_TOOL_NAME] =
       "finish_work({ status, summary, verification_token?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible summary";
   }
+  // Deferred tools (see do__refreshToolRegistry): registered, non-builtin, would auto-activate but for
+  // the current tier/setting. Listed compactly so the model knows to tool_search for them instead of
+  // assuming they don't exist.
+  const activeToolNameSet = new Set(validToolNames);
+  const deferredTools = Array.from(self._toolDefinitions.entries())
+    .filter(
+      ([name, entry]) =>
+        entry.sourceInfo.source !== "builtin" &&
+        self._toolPromptSnippets.has(name) &&
+        !entry.definition.alwaysActive &&
+        !activeToolNameSet.has(name),
+    )
+    .map(([name, entry]) => ({ name, description: entry.definition.description }));
 
   const loaderSystemPrompt = self._resourceLoader.getSystemPrompt();
   const loaderAppendSystemPrompt = self._resourceLoader.getAppendSystemPrompt();
@@ -185,6 +198,7 @@ export function do__rebuildSystemPrompt(
     taskVerificationMode: self._taskVerificationMode,
     verificationTier: completionMode === "implicit" && isLightTierActive(self) ? "light" : undefined,
     zeroEffectTextCompletion: self._taskVerificationRuntime?.tier.policy === "auto",
+    deferredTools,
   };
   return buildSystemPrompt(self._baseSystemPromptOptions);
 }
