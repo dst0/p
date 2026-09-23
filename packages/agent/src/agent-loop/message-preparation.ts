@@ -1,17 +1,8 @@
 import { type AssistantMessage, EventStream, validateToolArguments } from "@dst0/p-ai";
 import { type CompletionMode, createFinishWorkTool, FINISH_WORK_TOOL_NAME } from "../completion-protocol.ts";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool, AgentToolCall } from "../types.ts";
-import {
-  DEFAULT_COMPLETION_MODE,
-  DEFAULT_MAX_CONSECUTIVE_WAITING_TURNS,
-  DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
-  DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
-  DEFAULT_MAX_MISSING_FINISH_RETRIES,
-  DEFAULT_MAX_NO_PROGRESS_TURNS,
-  DEFAULT_MAX_TURNS,
-  EMPTY_USAGE,
-} from "./constants.ts";
-import type { AgentEventSink, CompletionProtocolLimits, CompletionProtocolState } from "./types.ts";
+import { DEFAULT_COMPLETION_MODE, EMPTY_USAGE } from "./constants.ts";
+import type { AgentEventSink, CompletionProtocolState } from "./types.ts";
 
 export function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
   return new EventStream<AgentEvent, AgentMessage[]>(
@@ -45,20 +36,6 @@ export function withCompletionProtocolTools(context: AgentContext, mode: Complet
   return {
     ...context,
     tools: [...tools.filter((tool) => tool.name !== FINISH_WORK_TOOL_NAME), createFinishWorkTool()],
-  };
-}
-export function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode): CompletionProtocolLimits {
-  const explicitFinishDefault = mode === "explicit_finish" ? Number.POSITIVE_INFINITY : undefined;
-  return {
-    maxTurns: config.completionLimits?.maxTurns ?? explicitFinishDefault ?? DEFAULT_MAX_TURNS,
-    maxNoProgressTurns:
-      config.completionLimits?.maxNoProgressTurns ?? explicitFinishDefault ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
-    maxConsecutiveWaitingTurns:
-      config.completionLimits?.maxConsecutiveWaitingTurns ?? DEFAULT_MAX_CONSECUTIVE_WAITING_TURNS,
-    maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
-    maxEmptyAssistantRetries: config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
-    maxMissingFinishRetries:
-      config.completionLimits?.maxMissingFinishRetries ?? explicitFinishDefault ?? DEFAULT_MAX_MISSING_FINISH_RETRIES,
   };
 }
 
