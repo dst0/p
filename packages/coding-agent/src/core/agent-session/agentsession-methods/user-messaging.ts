@@ -4,6 +4,10 @@ import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "../../
 import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { expandPromptTemplate } from "../../prompt-templates.ts";
 import type { AgentSession } from "../agentsession.ts";
+import {
+  resolveProjectInstructionDelivery,
+  syncProjectInstructionFallbackDelivery,
+} from "../project-instruction-fallback-delivery.ts";
 import { preserveCompiledProjectInstructionPrompt } from "../project-instruction-integrity.ts";
 import type { PromptOptions } from "../session-types.ts";
 
@@ -87,6 +91,8 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
       throw new Error(formatNoApiKeyFoundMessage(self.model.provider));
     }
 
+    syncProjectInstructionFallbackDelivery(self);
+
     // Build messages array (custom message if any, then user message)
     messages = [];
 
@@ -136,7 +142,7 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
         ? selectProjectInstructionPromptForTools(preparedProjectInstructions, self.getActiveToolNames())
         : undefined;
     const effectiveSystemPrompt =
-      self._projectInstructionMode === "compiled"
+      resolveProjectInstructionDelivery(self) === "compiled"
         ? preserveCompiledProjectInstructionPrompt(extensionSystemPrompt, immutableProjectInstructionPrompt)
         : extensionSystemPrompt;
     const runtimePrompts = self._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt, messages);

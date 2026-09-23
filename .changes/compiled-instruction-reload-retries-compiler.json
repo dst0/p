@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Make /reload retry a failed project-instruction compilation immediately instead of reusing the cached failure during the five-minute backoff that automatic refreshes keep."
+}

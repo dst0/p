@@ -16,6 +16,10 @@ import {
   SESSION_STATE_PROTOCOL_PROMPT,
   WORKING_STATE_PROMPT_CUSTOM_TYPE,
 } from "../constants.ts";
+import {
+  resolveProjectInstructionDelivery,
+  resolvePromptProjectInstructionDelivery,
+} from "../project-instruction-fallback-delivery.ts";
 import { restoreProjectRuleGateFromHistory } from "../project-instruction-integrity.ts";
 import { getUserMessageAnchorKey } from "../recall-utils.ts";
 import type {
@@ -28,7 +32,7 @@ import { formatTemporalContext } from "../temporal-context.ts";
 import { mergeProjectRuleGates } from "./agent-event-handling.ts";
 
 export function createProjectRuleTurnContext(self: AgentSession, query: string): ProjectRuleTurnContext {
-  if (self._projectInstructionMode !== "compiled") return {};
+  if (resolveProjectInstructionDelivery(self) !== "compiled") return {};
   const prepared = self._projectInstructions.state.current;
   if (!prepared) return {};
   if (!self._projectRuleGate) {
@@ -39,20 +43,6 @@ export function createProjectRuleTurnContext(self: AgentSession, query: string):
     );
   }
   const activeGeneration = ++self._projectRuleGateGeneration;
-  if (prepared.manifest.mode === "fallback") {
-    return {
-      prompt:
-        "<project_rule_routes>Compiled project instructions are unavailable. Do not mutate; restart in legacy mode.</project_rule_routes>",
-      gate: {
-        inputHash: prepared.manifest.inputHash,
-        batches: [],
-        activeGeneration,
-        candidateLinks: [],
-        failure:
-          "Compiled project instructions are unavailable. Reload with project instruction mode legacy before mutating work.",
-      },
-    };
-  }
   const routes = renderProjectInstructionTurnContext(prepared, query);
   if (!routes) {
     return {
@@ -95,10 +85,11 @@ export function do__createRuntimeContextPrompts(
   const memoryPrompt = self._createProjectMemoryPrompt(query);
   const projectRuleTurn = createProjectRuleTurnContext(self, query);
   self._projectRuleGate = mergeProjectRuleGates(self._projectRuleGate, projectRuleTurn.gate);
+  const delivery = resolveProjectInstructionDelivery(self);
   const rulesPrompt =
-    self._projectInstructionMode === "compiled"
+    delivery === "compiled"
       ? projectRuleTurn.prompt
-      : self._projectInstructionMode === "legacy"
+      : delivery === "legacy"
         ? createRulesContext(self._cwd, query)
         : undefined;
   const repoMapPrompt = createRepoMapContext(self._cwd, query)?.content;
@@ -206,7 +197,7 @@ export function do__createRuntimeContextPromptMessage(
     content,
     display: false,
     details: {
-      projectInstructionMode: self._projectInstructionMode,
+      projectInstructionMode: resolvePromptProjectInstructionDelivery(self),
       ...(projectRuleGate
         ? {
             projectRuleGate: {

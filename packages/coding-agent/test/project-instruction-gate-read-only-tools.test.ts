@@ -8,26 +8,38 @@ import { TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification/const
 import {
   cleanupProjectInstructionModeWorkspaces,
   createProjectInstructionModeWorkspace,
+  pendingProjectInstructionRuleBatches,
   projectInstructionToolHookInput,
 } from "./project-instruction-delivery-fixture.ts";
+
+type CompiledSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
 
 afterEach(() => {
   cleanupProjectInstructionModeWorkspaces();
 });
 
-describe("compiled fallback read-only tool routing", () => {
-  it("allows declared read-only extension tools while keeping unsafe declarations blocked", async () => {
+/** Fix an unread authoritative batch so every untrusted (potentially mutating) call is observably gated. */
+async function stagePendingRuleBatch(session: CompiledSession): Promise<void> {
+  session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
+  await expect(
+    session.agent.beforeToolCall?.(projectInstructionToolHookInput("edit", { path: "src/auth.ts" })),
+  ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("read_rules") });
+  expect(pendingProjectInstructionRuleBatches(session)).toHaveLength(1);
+}
+
+const gated = { block: true, reason: expect.stringContaining("read_rules") };
+
+describe("compiled gate read-only tool trust", () => {
+  it("allows declared read-only extension tools while keeping unsafe declarations gated", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
       cwd: workspace.root,
-      agentDir: join(workspace.root, ".agent-fallback-declared-read"),
+      agentDir: join(workspace.root, ".agent-gate-declared-read"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       taskVerificationMode: "off",
-      projectInstructionCompiler: async () => {
-        throw new Error("compiler unavailable");
-      },
+      projectInstructionCompiler: workspace.compiler,
       customTools: [
         {
           name: "workspace_project_list",
@@ -63,7 +75,8 @@ describe("compiled fallback read-only tool routing", () => {
       ],
     });
     try {
-      session._createRuntimeContextPrompts("inspect workspace projects", session.systemPrompt);
+      expect(session._projectInstructions.state.current?.manifest.mode).toBe("compiled");
+      await stagePendingRuleBatch(session);
       await expect(
         session.agent.beforeToolCall?.(projectInstructionToolHookInput("workspace_project_list", {})),
       ).resolves.toBeUndefined();
@@ -74,28 +87,26 @@ describe("compiled fallback read-only tool routing", () => {
       ] as const) {
         await expect(
           session.agent.beforeToolCall?.(projectInstructionToolHookInput(toolName, args)),
-        ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+        ).resolves.toMatchObject(gated);
       }
     } finally {
       session.dispose();
     }
   });
 
-  it("allows safe inspection shell commands but blocks mutating disk operations", async () => {
+  it("allows safe inspection shell commands but gates mutating disk operations", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
       cwd: workspace.root,
-      agentDir: join(workspace.root, ".agent-fallback-shell-inspection"),
+      agentDir: join(workspace.root, ".agent-gate-shell-inspection"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       taskVerificationMode: "off",
-      projectInstructionCompiler: async () => {
-        throw new Error("compiler unavailable");
-      },
+      projectInstructionCompiler: workspace.compiler,
     });
     try {
-      session._createRuntimeContextPrompts("inspect external disks", session.systemPrompt);
+      await stagePendingRuleBatch(session);
       await expect(
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput("bash", { command: "echo ok && sw_vers && diskutil list" }),
@@ -105,24 +116,22 @@ describe("compiled fallback read-only tool routing", () => {
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput("bash", { command: "diskutil eraseDisk APFS Empty disk9" }),
         ),
-      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+      ).resolves.toMatchObject(gated);
     } finally {
       session.dispose();
     }
   });
 
-  it("keeps identity-bound verification control-plane actions available in fallback mode", async () => {
+  it("keeps identity-bound verification control-plane actions available behind a pending batch", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
       cwd: workspace.root,
-      agentDir: join(workspace.root, ".agent-fallback-verification"),
+      agentDir: join(workspace.root, ".agent-gate-verification"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       taskVerificationMode: "audit",
-      projectInstructionCompiler: async () => {
-        throw new Error("compiler unavailable");
-      },
+      projectInstructionCompiler: workspace.compiler,
       customTools: [
         {
           name: "mutate_project",
@@ -135,7 +144,7 @@ describe("compiled fallback read-only tool routing", () => {
       ],
     });
     try {
-      session._createRuntimeContextPrompts("inspect verification state", session.systemPrompt);
+      await stagePendingRuleBatch(session);
       await expect(
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "status" }),
@@ -146,29 +155,27 @@ describe("compiled fallback read-only tool routing", () => {
     }
   });
 
-  it("blocks read-only-looking shell calls when a command prefix is configured", async () => {
+  it("gates read-only-looking shell calls when a command prefix is configured", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const settingsManager = SettingsManager.inMemory();
     settingsManager.setShellCommandPrefix("touch prefixed-mutation");
     const { session } = await createAgentSession({
       cwd: workspace.root,
-      agentDir: join(workspace.root, ".agent-fallback-shell-prefix"),
+      agentDir: join(workspace.root, ".agent-gate-shell-prefix"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: SessionManager.inMemory(workspace.root),
       settingsManager,
       projectInstructionMode: "compiled",
       taskVerificationMode: "off",
-      projectInstructionCompiler: async () => {
-        throw new Error("compiler unavailable");
-      },
+      projectInstructionCompiler: workspace.compiler,
     });
     try {
-      session._createRuntimeContextPrompts("inspect external disks", session.systemPrompt);
+      await stagePendingRuleBatch(session);
       await expect(
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput("bash", { command: "echo ok && sw_vers && diskutil list" }),
         ),
-      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+      ).resolves.toMatchObject(gated);
     } finally {
       session.dispose();
     }

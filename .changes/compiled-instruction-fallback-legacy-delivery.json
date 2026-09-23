@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Serve legacy AGENTS.md/CLAUDE.md instructions with a one-line notice instead of blocking file changes when compiled project instructions cannot be compiled, and resume compiled delivery after a later successful refresh."
+}

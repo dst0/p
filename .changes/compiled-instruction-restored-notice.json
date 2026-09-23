@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Show a one-line \"Compiled project rules restored\" notice (project_instructions_restored event) when compiled delivery resumes after a legacy fallback."
+}
