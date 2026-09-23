@@ -14,6 +14,9 @@ export const DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES = 3;
 
 export const DEFAULT_MAX_MISSING_FINISH_RETRIES = 15;
 
+/** Consecutive text-only answers repaired under explicit completion before the run stops. */
+export const DEFAULT_MAX_EXPLICIT_MISSING_FINISH_RETRIES = 3;
+
 export const MISSING_FINISH_WORK_REPAIR_MESSAGE =
   "The task is not complete because you did not call `finish_work`.\n" +
   "Continue working by calling the appropriate tools, or call `finish_work` if you believe the work is genuinely done.\n" +

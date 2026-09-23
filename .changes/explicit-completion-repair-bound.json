@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Fixed",
+  "summary": "Stop explicit-completion runs after three consecutive text-only answers or six turns without progress, with a user-facing reason, instead of repairing a missing `finish_work` forever."
+}
