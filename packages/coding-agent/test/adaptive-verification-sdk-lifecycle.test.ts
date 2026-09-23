@@ -10,12 +10,14 @@ import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import type { TaskVerificationSelection } from "../src/core/task-verification/verification-policy.ts";
+import { formatVerificationTierBadge } from "../src/modes/interactive/components/footer-verification-badge.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 interface FirstRequest {
   systemPromptChars: number;
   toolNames: string[];
   toolSchemaChars: number;
+  session: AgentSession;
 }
 
 describe("adaptive verification through createAgentSession", () => {
@@ -66,9 +68,12 @@ describe("adaptive verification through createAgentSession", () => {
     return { root, faux, create };
   }
 
-  async function firstRequest(taskVerificationMode?: TaskVerificationSelection): Promise<FirstRequest> {
+  async function firstRequest(
+    taskVerificationMode?: TaskVerificationSelection,
+    tools?: string[],
+  ): Promise<FirstRequest> {
     const { root, faux, create } = setup();
-    let captured: FirstRequest | undefined;
+    let captured: Omit<FirstRequest, "session"> | undefined;
     faux.setResponses([
       (context: Context) => {
         const toolSchemas = (context.tools ?? []).map(({ name, description, parameters }) => ({
@@ -99,13 +104,38 @@ describe("adaptive verification through createAgentSession", () => {
           ]
         : []),
     ]);
-    const session = await create(SessionManager.inMemory(root), taskVerificationMode);
+    const session = await create(SessionManager.inMemory(root), taskVerificationMode, tools);
     await session.prompt("What is 17*23? Reply with just the number.");
     if (!captured) throw new Error("No provider request was captured");
     expect(faux.getPendingResponseCount()).toBe(0);
     expect(session.state.errorMessage).toBeUndefined();
-    return captured;
+    return { ...captured, session };
   }
+
+  it("makes verification off lighter than LIGHT: no controller, ceremony, or finish_work", async () => {
+    const light = await firstRequest();
+    const off = await firstRequest("off");
+
+    expect(off.toolNames).toEqual(["read", "bash", "edit", "write", "semantic_search", "tool_search"]);
+    expect(off.session.agent.completionMode).toBe("implicit");
+    expect(off.session.getVerificationTierStatus()).toMatchObject({ policy: "off", active: false });
+    expect(formatVerificationTierBadge(off.session.getVerificationTierStatus())?.text).toBe("OFF");
+    expect(off.systemPromptChars + off.toolSchemaChars).toBeLessThan(light.systemPromptChars + light.toolSchemaChars);
+  });
+
+  it("reports a read-only allowlist as unverified and completes it on the text answer", async () => {
+    const readOnly = await firstRequest(undefined, ["read"]);
+
+    expect(readOnly.toolNames).toEqual(["read"]);
+    expect(readOnly.session.agent.completionMode).toBe("implicit");
+    expect(readOnly.session.getVerificationTierStatus()).toMatchObject({ policy: "auto", active: false });
+    expect(formatVerificationTierBadge(readOnly.session.getVerificationTierStatus())?.text).toBe("OFF");
+
+    const { root, create } = setup();
+    const strict = await create(SessionManager.inMemory(root), "strict", ["read"]);
+    expect(strict.agent.completionMode).toBe("explicit_finish");
+    expect(strict.getVerificationTierStatus()).toMatchObject({ policy: "strict", active: false });
+  });
 
   it("defaults sessions to the LIGHT tier with implicit completion and no finish_work ceremony", async () => {
     const { root, create } = setup();

@@ -36,6 +36,7 @@ const ESCALATION_CAUSES: Partial<Record<VerificationTierReason, string>> = {
   effect_source: "source change",
   effect_test: "test change",
   effect_config: "build config change",
+  effect_untracked: "untracked change",
   model_declared: "begin_code_task",
   prior: "code task",
   user_override: "/verify",
@@ -63,8 +64,9 @@ export function describeTierCause(reason: VerificationTierReason, trigger?: stri
 /**
  * Per-session verification tier state machine.
  *
- * A new, non-nudge prompt recomputes the tier from the policy and the deterministic prior;
- * during a run the tier may only escalate from LIGHT to STRICT, and only under `auto`.
+ * A new, non-nudge prompt recomputes the tier from the policy and the deterministic prior. Under `auto`, an
+ * escalated session stays STRICT until the next compaction, resume, or policy change, so alternating tiers
+ * never thrash the provider's prompt cache; during a run the tier may only escalate.
  */
 export class TaskVerificationTierRuntime {
   private readonly configuredPolicy: TaskVerificationPolicy;
@@ -74,6 +76,7 @@ export class TaskVerificationTierRuntime {
   private currentReason: VerificationTierReason = "default";
   private currentTrigger: string | undefined;
   private pendingNotice: string | undefined;
+  private deEscalationAllowed = true;
   private transitionListener: ((transition: VerificationTierTransition) => void) | undefined;
 
   constructor(options: TaskVerificationTierRuntimeOptions) {
@@ -107,27 +110,55 @@ export class TaskVerificationTierRuntime {
     return this.policy === "auto";
   }
 
-  /** Restores the latest persisted tier on the current branch. */
+  /**
+   * Restores the latest persisted tier on the branch, or the configured default when none exists. The
+   * provider cache is cold after a resume or tree navigation, so the next prompt may de-escalate.
+   */
   restore(entries: readonly SessionEntry[]): void {
-    for (let index = entries.length - 1; index >= 0; index--) {
+    let data: TaskVerificationTierEntry | undefined;
+    for (let index = entries.length - 1; index >= 0 && !data; index--) {
       const entry = entries[index];
-      if (entry?.type !== "custom" || entry.customType !== TASK_VERIFICATION_TIER_CUSTOM_TYPE) continue;
-      if (!isTierEntry(entry.data)) continue;
-      this.overridePolicy = entry.data.policyOverride ? entry.data.policy : undefined;
-      this.currentTier = this.policy === "strict" ? "strict" : this.policy === "auto" ? entry.data.tier : "light";
-      this.currentReason = entry.data.reason;
-      this.currentTrigger = entry.data.trigger;
-      return;
+      if (
+        entry?.type === "custom" &&
+        entry.customType === TASK_VERIFICATION_TIER_CUSTOM_TYPE &&
+        isTierEntry(entry.data)
+      ) {
+        data = entry.data;
+      }
     }
+    this.overridePolicy = data?.policyOverride ? data.policy : undefined;
+    const policy = this.policy;
+    this.currentTier = policy === "strict" ? "strict" : policy === "auto" && data ? data.tier : "light";
+    this.currentReason = data?.reason ?? "default";
+    this.currentTrigger = data?.trigger;
+    this.pendingNotice = undefined;
+    this.deEscalationAllowed = true;
   }
 
-  /** Recomputes the tier for a new user prompt; nudges such as "continue" keep the current tier. */
-  beginPrompt(promptText: string, isNudge: boolean): VerificationTierTransition | undefined {
+  /** Compaction rebuilds the prompt prefix anyway, so the next prompt may return an escalated session to LIGHT. */
+  allowDeEscalation(): void {
+    this.deEscalationAllowed = true;
+  }
+
+  /**
+   * Recomputes the tier for a user prompt; nudges such as "continue" keep the current tier. Under `auto`,
+   * STRICT is kept until de-escalation is allowed, and `escalateOnly` (queued mid-run messages) never lowers it.
+   */
+  beginPrompt(
+    promptText: string,
+    isNudge: boolean,
+    options: { escalateOnly?: boolean } = {},
+  ): VerificationTierTransition | undefined {
     if (isNudge) return undefined;
     const policy = this.policy;
     const decision: VerificationTierDecision =
       policy === "off" ? { tier: "light", reason: "user_override" } : initialVerificationTier(policy, promptText);
-    return this.transition(decision);
+    const keepStrict =
+      policy === "auto" &&
+      decision.tier === "light" &&
+      this.currentTier === "strict" &&
+      (options.escalateOnly === true || !this.deEscalationAllowed);
+    return keepStrict ? undefined : this.transition(decision);
   }
 
   /** Escalates LIGHT to STRICT under `auto`; returns undefined when nothing changed. */
@@ -142,7 +173,9 @@ export class TaskVerificationTierRuntime {
   setPolicyOverride(policy: TaskVerificationPolicy): VerificationTierTransition {
     this.overridePolicy = policy;
     const tier: VerificationTier = policy === "strict" ? "strict" : policy === "auto" ? this.currentTier : "light";
-    return this.record({ tier, reason: "user_override" });
+    const transition = this.record({ tier, reason: "user_override" });
+    this.deEscalationAllowed = true;
+    return transition;
   }
 
   /** Receives every recorded transition, after it was persisted. */
@@ -167,6 +200,7 @@ export class TaskVerificationTierRuntime {
     this.currentReason = decision.reason;
     this.currentTrigger = decision.trigger;
     if (decision.tier === "light") this.pendingNotice = undefined;
+    else this.deEscalationAllowed = false;
     const policy = this.policy;
     this.persist({
       version: 1,

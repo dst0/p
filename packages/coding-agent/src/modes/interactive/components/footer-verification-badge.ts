@@ -6,12 +6,15 @@ export interface VerificationTierBadge {
   color: ThemeColor;
 }
 
-/** Footer badge: LIGHT, STRICT·auto (auto-escalated), STRICT (forced), or OFF; none when verification is off in settings. */
+/**
+ * Footer badge from actual behavior: OFF when nothing is verified (policy `off` or no mutating tools),
+ * otherwise LIGHT, STRICT·auto (escalated under `auto`), or STRICT (forced); none without a configuration.
+ */
 export function formatVerificationTierBadge(
   status: VerificationTierStatus | undefined,
 ): VerificationTierBadge | undefined {
   if (!status) return undefined;
-  if (status.policy === "off") return { text: "OFF", color: "warning" };
+  if (!status.active) return { text: "OFF", color: "dim" };
   if (status.tier === "light") return { text: "LIGHT", color: "dim" };
   return { text: status.policy === "auto" ? "STRICT·auto" : "STRICT", color: "accent" };
 }

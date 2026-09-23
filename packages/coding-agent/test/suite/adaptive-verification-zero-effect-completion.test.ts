@@ -77,4 +77,22 @@ describe("adaptive verification: zero-effect STRICT completion", () => {
     expect(protocolEvents(adaptive)).toEqual(["completion_mode"]);
     expect(adaptive.harness.session.getVerificationTierStatus()?.tier).toBe("strict");
   });
+
+  it("completes the controller task on an accepted text answer so later questions are not repaired", async () => {
+    const adaptive = await setup();
+    adaptive.respond(
+      fauxAssistantMessage("Which file holds the range helper?"),
+      fauxAssistantMessage("I need the file name before changing anything."),
+      fauxAssistantMessage("The helper is exported from src/range.ts."),
+    );
+    const session = adaptive.harness.session;
+
+    await session.prompt("Fix the off-by-one bug in the range helper");
+    expect(session._taskVerificationRuntime?.controller.state.taskPrompts ?? []).toEqual([]);
+    await session.prompt("Where is the range helper exported?");
+
+    expect(adaptive.requests).toHaveLength(3);
+    expect(session.getVerificationTierStatus()?.tier).toBe("strict");
+    expect(protocolEvents(adaptive).filter((event) => event === "missing_finish_work_retry")).toHaveLength(1);
+  });
 });

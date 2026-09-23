@@ -64,10 +64,11 @@ describe("FooterComponent", () => {
   });
 
   it.each([
-    [{ policy: "auto", tier: "light" }, "LIGHT"],
-    [{ policy: "auto", tier: "strict" }, "STRICT·auto"],
-    [{ policy: "strict", tier: "strict" }, "STRICT"],
-    [{ policy: "off", tier: "light" }, "OFF"],
+    [{ policy: "auto", tier: "light", active: true }, "LIGHT"],
+    [{ policy: "auto", tier: "strict", active: true }, "STRICT·auto"],
+    [{ policy: "strict", tier: "strict", active: true }, "STRICT"],
+    [{ policy: "off", tier: "light", active: false }, "OFF"],
+    [{ policy: "strict", tier: "strict", active: false }, "OFF"],
   ] as const)("renders the verification badge for %o as %s", (status, badge) => {
     const footer = new FooterComponent(
       createSession("normal", { ...status, policyOverridden: false, reason: "prior" }),
@@ -77,6 +78,7 @@ describe("FooterComponent", () => {
     const rendered = footer.render(120).join("\n");
     expect(rendered).toContain(badge);
     if (badge === "STRICT") expect(rendered).not.toContain("STRICT·auto");
+    if (badge === "OFF") expect(rendered).not.toMatch(/LIGHT|STRICT/);
   });
 
   it("renders no verification badge when verification is off in settings", () => {

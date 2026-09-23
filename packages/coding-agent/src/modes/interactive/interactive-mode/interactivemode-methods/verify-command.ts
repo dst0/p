@@ -15,7 +15,9 @@ const USAGE = "Usage: /verify [auto|light|strict|off] — no argument shows the 
 
 export function formatVerificationStatus(status: VerificationTierStatus): string {
   const source = status.policyOverridden ? "session override" : "settings";
-  return `Verification: ${status.policy} (${source}); tier ${status.tier.toUpperCase()} — ${describeTierCause(status.reason, status.trigger)}`;
+  const tier = status.active ? `tier ${status.tier.toUpperCase()}` : "nothing verified";
+  const pending = status.pendingPolicy ? `; switches to ${status.pendingPolicy} at the next turn` : "";
+  return `Verification: ${status.policy} (${source}); ${tier} — ${describeTierCause(status.reason, status.trigger)}${pending}`;
 }
 
 /** `/verify [auto|light|strict|off]`: show or override the verification policy for this session. */

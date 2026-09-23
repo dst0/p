@@ -43,7 +43,7 @@ describe("verification tier runtime", () => {
     expect(tierEntries(sessionManager)).toEqual([]);
   });
 
-  it("recomputes the tier from the prior for each new prompt and persists only changes", () => {
+  it("recomputes the tier for each new prompt and persists only changes", () => {
     const { runtime, sessionManager, transitions } = createRuntime("auto");
 
     expect(runtime.beginPrompt(CODE_PROMPT, false)).toEqual({
@@ -53,13 +53,36 @@ describe("verification tier runtime", () => {
       policy: "auto",
     });
     expect(runtime.beginPrompt("Refactor the loader to use async iterators", false)).toBeUndefined();
-    expect(runtime.beginPrompt(QUESTION, false)).toMatchObject({ tier: "light", previousTier: "strict" });
 
     expect(tierEntries(sessionManager)).toEqual([
       { version: 1, policy: "auto", policyOverride: false, tier: "strict", reason: "prior" },
-      { version: 1, policy: "auto", policyOverride: false, tier: "light", reason: "prior" },
     ]);
-    expect(transitions.map((transition) => transition.tier)).toEqual(["strict", "light"]);
+    expect(transitions.map((transition) => transition.tier)).toEqual(["strict"]);
+  });
+
+  it("keeps an escalated session STRICT until compaction allows returning to LIGHT", () => {
+    const { runtime, sessionManager } = createRuntime("auto");
+    runtime.beginPrompt(CODE_PROMPT, false);
+
+    expect(runtime.beginPrompt(QUESTION, false)).toBeUndefined();
+    expect(runtime.tier).toBe("strict");
+
+    runtime.allowDeEscalation();
+    expect(runtime.beginPrompt(QUESTION, false, { escalateOnly: true })).toBeUndefined();
+    expect(runtime.beginPrompt(QUESTION, false)).toMatchObject({ tier: "light", previousTier: "strict" });
+    expect(tierEntries(sessionManager).map((entry) => entry.tier)).toEqual(["strict", "light"]);
+
+    runtime.beginPrompt(CODE_PROMPT, false);
+    expect(runtime.beginPrompt(QUESTION, false)).toBeUndefined();
+  });
+
+  it("lets queued messages escalate but never lower the tier", () => {
+    const { runtime } = createRuntime("auto");
+
+    expect(runtime.beginPrompt(CODE_PROMPT, false, { escalateOnly: true })).toMatchObject({ tier: "strict" });
+    runtime.allowDeEscalation();
+    expect(runtime.beginPrompt(QUESTION, false, { escalateOnly: true })).toBeUndefined();
+    expect(runtime.tier).toBe("strict");
   });
 
   it("keeps the current tier for continuation nudges", () => {
@@ -99,6 +122,7 @@ describe("verification tier runtime", () => {
     const { runtime } = createRuntime("auto");
     runtime.escalate("effect_config", "package.json");
 
+    runtime.allowDeEscalation();
     runtime.beginPrompt(QUESTION, false);
 
     expect(runtime.tier).toBe("light");
@@ -216,9 +240,35 @@ describe("verification tier runtime", () => {
     expect(restored.reason).toBe("default");
   });
 
+  it("returns to the configured default when the selected branch has no tier entry", () => {
+    const { runtime } = createRuntime("auto");
+    runtime.setPolicyOverride("strict");
+    runtime.escalate("effect_source", "src/a.ts");
+
+    runtime.restore([]);
+
+    expect([runtime.policy, runtime.policyOverridden, runtime.tier, runtime.reason]).toEqual([
+      "auto",
+      false,
+      "light",
+      "default",
+    ]);
+  });
+
+  it("allows a resumed STRICT session to return to LIGHT on the next question", () => {
+    const sessionManager = SessionManager.inMemory();
+    createRuntime("auto", sessionManager).runtime.beginPrompt(CODE_PROMPT, false);
+    const resumed = createRuntime("auto", sessionManager).runtime;
+    resumed.restore(sessionManager.getBranch());
+
+    expect(resumed.tier).toBe("strict");
+    expect(resumed.beginPrompt(QUESTION, false)).toMatchObject({ tier: "light" });
+  });
+
   it("describes causes for UI notes", () => {
     expect(describeTierCause("effect_test", "src/a.test.ts")).toBe("test change: src/a.test.ts");
     expect(describeTierCause("prior")).toBe("code task");
     expect(describeTierCause("default")).toBe("default");
+    expect(describeTierCause("effect_untracked", "bash")).toBe("untracked change: bash");
   });
 });

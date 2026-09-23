@@ -67,15 +67,15 @@ describe("/verify command", () => {
     expect(harness.session.getVerificationTierStatus()?.policyOverridden).toBe(false);
   });
 
-  it("explains that tiers need a restart when verification is off in settings", async () => {
+  it("shows OFF and explains that tiers need a restart when verification is off in settings", async () => {
     const { output, context } = await setup("off");
 
     handleVerifyCommand(context, "/verify");
     handleVerifyCommand(context, "/verify strict");
 
-    expect(output.warnings).toHaveLength(2);
+    expect(output.status).toEqual(["Verification: off (settings); nothing verified — default"]);
+    expect(output.warnings).toHaveLength(1);
     expect(output.warnings[0]).toContain("Task verification is off in settings");
-    expect(output.status).toEqual([]);
   });
 
   it("formats escalation causes with their trigger", () => {
@@ -86,7 +86,9 @@ describe("/verify command", () => {
         tier: "strict",
         reason: "effect_source",
         trigger: "src/a.ts",
+        active: true,
+        pendingPolicy: "light",
       }),
-    ).toBe("Verification: auto (settings); tier STRICT — source change: src/a.ts");
+    ).toBe("Verification: auto (settings); tier STRICT — source change: src/a.ts; switches to light at the next turn");
   });
 });

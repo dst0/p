@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
+import { fauxAssistantMessage, fauxToolCall, type Model } from "@dst0/p-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { BEGIN_CODE_TASK_TOOL_NAME } from "../../src/core/tools/begin-code-task.ts";
 import {
@@ -122,23 +122,43 @@ describe("adaptive verification: escalation to STRICT", () => {
     expect(protocolEvents(adaptive)).toEqual([]);
   });
 
-  it("returns to LIGHT for the next question and re-escalates a later edit with earlier paths still owed", async () => {
+  it("keeps the escalated tier and its prompt cache until compaction, then returns to LIGHT", async () => {
     const adaptive = await setupRepository();
+    const session = adaptive.harness.session;
     adaptive.respond(
       tools(fauxToolCall("write", { path: "src/a.js", content: "export const value = 2;\n" })),
       tools(fauxToolCall("finish_work", { status: "partial", summary: "Edited src/a.js; not verified." })),
+      tools(
+        fauxToolCall("finish_work", {
+          status: "partial",
+          summary: "value is exported from src/a.js.",
+          remaining_work: ["Verify the src/a.js change"],
+        }),
+      ),
       fauxAssistantMessage("value is exported from src/a.js."),
       tools(fauxToolCall("write", { path: "src/b.js", content: "export const other = 3;\n" })),
       tools(fauxToolCall("finish_work", { status: "partial", summary: "Added src/b.js." })),
     );
-    const session = adaptive.harness.session;
 
     await session.prompt("Look at src/a.js.");
     await session.prompt("Where is value exported?");
-    const questionRequest = adaptive.requests[2];
-    await session.prompt("Look at src/b.js.");
+    expect(adaptive.requests).toHaveLength(3);
+    const [, escalated, question] = adaptive.requests;
+    expect(question?.toolNames).toEqual(escalated?.toolNames);
+    expect(
+      question?.systemPrompt.startsWith(escalated?.systemPrompt.split("\n\n<session_state_protocol>")[0] ?? "-"),
+    ).toBe(true);
 
-    expect(questionRequest?.toolNames).not.toContain("finish_work");
+    session.agent.state.model = undefined as unknown as Model<string>;
+    await session.compact();
+    session.agent.state.model = adaptive.harness.getModel();
+    const beforeCompactedQuestion = adaptive.requests.length;
+    await session.prompt("Where is value exported?");
+    expect(adaptive.requests).toHaveLength(beforeCompactedQuestion + 1);
+    expect(adaptive.requests[beforeCompactedQuestion]?.toolNames).not.toContain("finish_work");
+    expect(session.getVerificationTierStatus()).toMatchObject({ tier: "light", reason: "prior" });
+
+    await session.prompt("Look at src/b.js.");
     expect(session._taskVerificationRuntime?.controller.state.taskOwnedPaths).toEqual(["src/a.js", "src/b.js"]);
     expect(session.getVerificationTierStatus()).toMatchObject({ tier: "strict", trigger: "src/b.js" });
   });

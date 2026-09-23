@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Escalate code edits to STRICT even when workspace snapshots are unbounded or the edit targets a sibling worktree, observe extension tools that declare workspace writes, keep an escalated session STRICT until compaction to preserve the prompt cache, apply queued messages and mid-run policy changes at turn boundaries, restore the tier after tree navigation, and make verification `off` lighter than LIGHT."
+}

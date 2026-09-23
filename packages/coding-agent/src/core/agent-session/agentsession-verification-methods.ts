@@ -9,11 +9,18 @@ export interface VerificationTierStatus {
   tier: VerificationTier;
   reason: VerificationTierReason;
   trigger?: string;
+  /** False when nothing is verified: policy `off`, or no active tool can change anything. */
+  active: boolean;
+  /** An override requested mid-run that applies at the next turn boundary. */
+  pendingPolicy?: TaskVerificationPolicy;
 }
 
 export interface AgentSessionVerificationMethods {
-  /** Undefined when verification is off in settings (no controller installed). */
+  /** Undefined only for sessions created without a verification configuration. */
   getVerificationTierStatus(): VerificationTierStatus | undefined;
-  /** Applies a session-level policy override; undefined when verification is off in settings. */
+  /**
+   * Applies a session-level policy override (queued to the next turn boundary while a run streams);
+   * undefined when verification is off in settings and no controller exists.
+   */
   setVerificationPolicy(policy: TaskVerificationPolicy): VerificationTierStatus | undefined;
 }

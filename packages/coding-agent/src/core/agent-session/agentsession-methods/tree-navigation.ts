@@ -7,6 +7,7 @@ import {
 } from "../../compaction/index.ts";
 import type { SessionBeforeTreeResult, TreePreparation } from "../../extensions/index.ts";
 import type { BranchSummaryEntry } from "../../session-manager.ts";
+import { restoreVerificationTierFromBranch } from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
 
 export async function do_navigateTree(
@@ -194,6 +195,7 @@ export async function do_navigateTree(
       targetContextTokens: settings.targetContextTokens,
       systemPromptTokens,
     });
+    restoreVerificationTierFromBranch(self);
 
     // Emit session_tree event
     await self._extensionRunner.emit({

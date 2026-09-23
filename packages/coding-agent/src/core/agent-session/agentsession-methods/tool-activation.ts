@@ -3,7 +3,11 @@ import type { Model } from "@dst0/p-ai";
 import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { buildSystemPrompt } from "../../system-prompt.ts";
 import { reconcileTaskVerificationRuntime } from "../../task-verification-session-runtime.ts";
-import { isLightTierActive, verificationToolGuidelines } from "../../task-verification-tier-session.ts";
+import {
+  forcesImplicitCompletion,
+  isLightTierActive,
+  verificationToolGuidelines,
+} from "../../task-verification-tier-session.ts";
 import type { AgentSession } from "../agentsession.ts";
 
 export function do_setActiveToolsByName(self: AgentSession, toolNames: string[]): void {
@@ -97,7 +101,7 @@ export function do__getEffectiveCompletionModeForActiveTools(
   self: AgentSession,
   activeToolCount: number,
 ): CompletionMode {
-  if (isLightTierActive(self)) return "implicit";
+  if (forcesImplicitCompletion(self)) return "implicit";
   return activeToolCount === 0 && self._completionMode !== "implicit" ? "implicit" : self._completionMode;
 }
 
@@ -170,7 +174,7 @@ export function do__rebuildSystemPrompt(
     promptGuidelines,
     completionMode,
     taskVerificationMode: self._taskVerificationMode,
-    verificationTier: isLightTierActive(self) ? "light" : undefined,
+    verificationTier: completionMode === "implicit" && isLightTierActive(self) ? "light" : undefined,
     zeroEffectTextCompletion: self._taskVerificationRuntime?.tier.policy === "auto",
   };
   return buildSystemPrompt(self._baseSystemPromptOptions);

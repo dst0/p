@@ -118,30 +118,26 @@ describe("adaptive verification: persistence and overrides", () => {
     expect(session._taskVerificationRuntime?.controller.state.taskOwnedPaths ?? []).toEqual([]);
   });
 
-  it("restores the configured protocol without verification when switched off for the session", async () => {
+  it("makes a session lighter than LIGHT when verification is switched off", async () => {
     const adaptive = await setup();
     const session = adaptive.harness.session;
     session.setVerificationPolicy("off");
     adaptive.respond(
       tools(fauxToolCall("write", { path: "src/a.js", content: "export const value = 2;\n" })),
       fauxAssistantMessage("Changed src/a.js."),
-      tools(fauxToolCall("finish_work", { status: "success", summary: "Changed src/a.js." })),
     );
 
-    expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["sleep", "update_session_state"]));
-    expect(session.getActiveToolNames()).not.toContain("record_task_verification");
+    expect(session.getActiveToolNames()).not.toContain("sleep");
+    expect(session.getActiveToolNames()).not.toContain(BEGIN_CODE_TASK_TOOL_NAME);
     await session.prompt("Fix the off-by-one bug in src/a.js");
 
     expect(session._taskVerificationRuntime?.enabled).toBe(false);
-    expect(session.agent.completionMode).toBe("explicit_finish");
+    expect(session.agent.completionMode).toBe("implicit");
     expect(session._taskVerificationRuntime?.controller.state.taskOwnedPaths ?? []).toEqual([]);
-    expect(session.getVerificationTierStatus()).toMatchObject({ policy: "off", tier: "light" });
-    expect(adaptive.requests).toHaveLength(3);
-    expect(adaptive.requests[1]?.toolNames).not.toContain("record_task_verification");
-    const finish = adaptive.harness
-      .eventsOfType("tool_execution_end")
-      .find((event) => event.toolName === "finish_work");
-    expect(finish?.isError).toBe(false);
+    expect(session.getVerificationTierStatus()).toMatchObject({ policy: "off", tier: "light", active: false });
+    expect(adaptive.requests).toHaveLength(2);
+    expect(adaptive.requests[1]?.toolNames).not.toContain("finish_work");
+    expect(adaptive.requests[1]?.systemPrompt).not.toContain("<session_state_protocol>");
   });
 
   it("returns to the prior-driven tier after /verify auto", async () => {
@@ -156,5 +152,27 @@ describe("adaptive verification: persistence and overrides", () => {
     expect(session.getVerificationTierStatus()).toMatchObject({ policy: "auto", tier: "light", reason: "prior" });
     expect(adaptive.requests).toHaveLength(1);
     expect(adaptive.requests[0]?.toolNames).toContain(BEGIN_CODE_TASK_TOOL_NAME);
+  });
+
+  it("returns to the tier recorded on the branch selected by tree navigation", async () => {
+    const adaptive = await setup();
+    const session = adaptive.harness.session;
+    adaptive.respond(
+      fauxAssistantMessage("It exports value."),
+      tools(fauxToolCall("write", { path: "src/a.js", content: "export const value = 2;\n" })),
+      tools(fauxToolCall("finish_work", { status: "partial", summary: "Edited src/a.js." })),
+    );
+    await session.prompt("What does src/a.js export?");
+    await session.prompt("Look at src/a.js.");
+    expect(session.getVerificationTierStatus()?.tier).toBe("strict");
+
+    const secondPrompt = adaptive.harness.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message" && entry.message.role === "user")[1];
+    await session.navigateTree(secondPrompt!.id);
+
+    expect(session.getVerificationTierStatus()).toMatchObject({ tier: "light", reason: "default" });
+    expect(session.getActiveToolNames()).toContain(BEGIN_CODE_TASK_TOOL_NAME);
+    expect(session.agent.completionMode).toBe("implicit");
   });
 });

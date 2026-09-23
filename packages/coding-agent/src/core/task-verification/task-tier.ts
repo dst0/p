@@ -15,6 +15,7 @@ export const VERIFICATION_TIER_REASONS = [
   "effect_source",
   "effect_test",
   "effect_config",
+  "effect_untracked",
   "user_override",
 ] as const;
 export type VerificationTierReason = (typeof VERIFICATION_TIER_REASONS)[number];
@@ -43,6 +44,13 @@ export const LIGHT_DEFERRED_TOOL_NAMES: readonly string[] = [
 const STRICT_PRIOR_TASK_KINDS: ReadonlySet<TaskKind> = new Set(["bug_fix", "behavior_change", "refactor", "feature"]);
 const DOC_EXTENSIONS = new Set([".md", ".mdx", ".markdown", ".rst", ".adoc", ".txt"]);
 const EXTRA_CODE_EXTENSIONS = new Set([
+  ".mts",
+  ".cts",
+  ".css",
+  ".scss",
+  ".html",
+  ".tf",
+  ".proto",
   ".sh",
   ".bash",
   ".zsh",

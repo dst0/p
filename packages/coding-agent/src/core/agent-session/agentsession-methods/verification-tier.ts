@@ -4,14 +4,21 @@ import type { AgentSession } from "../agentsession.ts";
 import type { VerificationTierStatus } from "../agentsession-verification-methods.ts";
 
 export function do_getVerificationTierStatus(self: AgentSession): VerificationTierStatus | undefined {
-  const tier = self._taskVerificationRuntime?.tier;
-  if (!tier) return undefined;
+  const runtime = self._taskVerificationRuntime;
+  if (!runtime) {
+    return self._verificationPolicyOff
+      ? { policy: "off", policyOverridden: false, tier: "light", reason: "default", active: false }
+      : undefined;
+  }
+  const tier = runtime.tier;
   return {
     policy: tier.policy,
     policyOverridden: tier.policyOverridden,
     tier: tier.tier,
     reason: tier.reason,
     ...(tier.trigger ? { trigger: tier.trigger } : {}),
+    active: runtime.enabled,
+    ...(runtime.pendingPolicy ? { pendingPolicy: runtime.pendingPolicy } : {}),
   };
 }
 

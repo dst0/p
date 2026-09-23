@@ -8,7 +8,11 @@ import {
 } from "./compaction/index.ts";
 import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
-import { createVerificationTierNoticeMessage, isLightTierActive } from "./task-verification-tier-session.ts";
+import {
+  applyQueuedVerificationChanges,
+  createVerificationTierNoticeMessage,
+  isLightTierActive,
+} from "./task-verification-tier-session.ts";
 import {
   createSessionStateReminderMessage,
   createTurnCheckpointMessages,
@@ -46,6 +50,7 @@ export function installAgentSessionPrepareNextTurn(
     if (compacted || successfulStateCheck) {
       lastStateCheckAt = now;
     }
+    applyQueuedVerificationChanges(session);
     const state = session.getSessionStateSnapshot().state;
     const tier = session._taskVerificationRuntime?.tier;
     const lightTier = isLightTierActive(session);

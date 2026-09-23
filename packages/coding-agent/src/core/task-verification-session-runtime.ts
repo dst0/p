@@ -24,8 +24,9 @@ import {
 } from "./task-verification.ts";
 import { beginCodeTask } from "./task-verification-begin-code-task.ts";
 import { resolveTaskVerificationSessionPolicy } from "./task-verification-session-policy.ts";
+import { observeVerificationTierEffect } from "./task-verification-tier-effects.ts";
 import { TASK_VERIFICATION_TIER_CUSTOM_TYPE, TaskVerificationTierRuntime } from "./task-verification-tier-runtime.ts";
-import { installVerificationTier, observeVerificationTierEffect } from "./task-verification-tier-session.ts";
+import { installVerificationOff, installVerificationTier } from "./task-verification-tier-session.ts";
 import { BEGIN_CODE_TASK_TOOL_NAME, createBeginCodeTaskToolDefinition } from "./tools/begin-code-task.ts";
 
 interface TaskVerificationRuntimeOptions {
@@ -40,6 +41,8 @@ interface TaskVerificationRuntimeOptions {
 
 interface PreparedTaskVerificationRuntimeBase {
   completionMode: CompletionMode;
+  /** Whether the completion mode came from an explicit option or setting rather than the default. */
+  completionModeExplicit: boolean;
   /** Engine mode enforced by the initial tier; `off` while LIGHT. */
   effectiveMode: TaskVerificationMode;
   configuration: TaskVerificationConfiguration;
@@ -120,13 +123,19 @@ export function prepareTaskVerificationRuntime(
     excludeTools: options.excludeTools,
     allowReadOnlyEvidence: options.tools === undefined && options.noTools !== "all",
   });
-  const completionMode = options.completionMode ?? settingsManager.getCompletionMode();
+  // Verification off is the lightest protocol: without an explicit choice, a text answer ends the run.
+  const completionModeExplicit =
+    options.completionMode !== undefined || settingsManager.settings.completionMode !== undefined;
+  const defaultsToImplicit = configuredMode === "off" && !completionModeExplicit;
+  const completionMode =
+    options.completionMode ?? (defaultsToImplicit ? "implicit" : settingsManager.getCompletionMode());
   if (configuredMode !== "off" && configuration.policy !== "light" && completionMode !== "explicit_finish") {
     throw new Error(`Task verification policy "${configuration.policy}" requires explicit_finish completion mode`);
   }
   if (configuredMode === "off") {
     return {
       completionMode,
+      completionModeExplicit,
       effectiveMode: "off",
       configuration,
       tools: addToolNames(options.tools, []),
@@ -140,6 +149,7 @@ export function prepareTaskVerificationRuntime(
   const toolDefinitions = createVerificationToolDefinitions(controller, configuredMode, tier);
   return {
     completionMode,
+    completionModeExplicit,
     effectiveMode: policy.enabled && tier.tier === "strict" ? configuredMode : "off",
     configuration,
     tools: addToolNames(
@@ -201,7 +211,7 @@ function installControllerHookGate(session: AgentSession, runtime: InstalledTask
     if (!runtime.enabled) return await nativeAfterToolCall?.(context, signal);
     const result = await controlledAfterToolCall?.(context, signal);
     const verifiedCompletion = finalizeTaskVerificationCompletion(session, runtime, context, result);
-    observeVerificationTierEffect(runtime);
+    observeVerificationTierEffect(runtime, context, result?.isError ?? context.isError, session._cwd);
     if (verifiedCompletion) {
       session.setActiveToolsByName(session.getActiveToolNames());
       return verifiedCompletion;
@@ -221,7 +231,10 @@ function installControllerHookGate(session: AgentSession, runtime: InstalledTask
 }
 
 export function installTaskVerificationRuntime(session: AgentSession, runtime: PreparedTaskVerificationRuntime): void {
-  if (!runtime.controller) return;
+  if (!runtime.controller) {
+    if (runtime.configuration.policy === "off") installVerificationOff(session);
+    return;
+  }
   for (const definition of runtime.toolDefinitions) {
     session._projectRuleSafeToolDefinitions.add(definition);
   }
@@ -232,11 +245,12 @@ export function installTaskVerificationRuntime(session: AgentSession, runtime: P
     enabled: runtime.effectiveMode !== "off",
     managedToolNames: new Set(runtime.toolDefinitions.map((definition) => definition.name)),
     tier: runtime.tier,
+    completionModeExplicit: runtime.completionModeExplicit,
     tierManagedToolNames:
       session._allowedToolNames === undefined
         ? LIGHT_DEFERRED_TOOL_NAMES.filter((name) => activeToolNames.includes(name))
         : [],
-    observedLedger: new Set(),
+    observedLedger: { ownedPaths: new Set(), sourcePaths: new Set(), mutationRevision: 0 },
   };
   session._taskVerificationRuntime = installedRuntime;
   installControllerHookGate(session, installedRuntime);
