@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { INDEXING_SERVICE_REINSTALL_FILE, INDEXING_SERVICE_STATUS_FILE } from "../src/core/indexing-service.ts";
 import { computeIndexingVersion } from "../src/core/indexing-version.ts";
 
 const temporaryDirectories: string[] = [];
@@ -263,8 +264,6 @@ describe("compute-indexing-version.js script", () => {
 
 describe("indexing version in status data", () => {
   it("exports the status and reinstall file constants", () => {
-    const { INDEXING_SERVICE_STATUS_FILE, INDEXING_SERVICE_REINSTALL_FILE } =
-      require("../src/core/indexing-service.ts");
     expect(INDEXING_SERVICE_STATUS_FILE).toBe("indexing-service-status.json");
     expect(INDEXING_SERVICE_REINSTALL_FILE).toBe("indexing-service-reinstall.json");
   });
