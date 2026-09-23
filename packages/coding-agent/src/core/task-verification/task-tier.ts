@@ -41,6 +41,31 @@ export const LIGHT_DEFERRED_TOOL_NAMES: readonly string[] = [
   "keep_context",
 ];
 
+/** Controls whether extension/MCP tools with a `promptSnippet` auto-activate like a builtin. */
+export type DeferExtensionToolsPolicy = "light" | "always" | "never";
+
+export interface ToolActivationCandidate {
+  name: string;
+  /** Tool registry source, e.g. "builtin", "extension", "mcp", "sdk". */
+  source: string;
+  hasPromptSnippet: boolean;
+}
+
+/**
+ * Non-builtin tools with a promptSnippet defer like `LIGHT_DEFERRED_TOOL_NAMES` while LIGHT: they stay
+ * registered and findable via tool_search, but do not auto-activate or inject their snippet into the
+ * system prompt. Reserved names (the verification control plane) never defer.
+ */
+export function deferrableExtensionToolNames(
+  candidates: readonly ToolActivationCandidate[],
+  reservedNames: ReadonlySet<string>,
+): string[] {
+  return candidates
+    .filter((candidate) => candidate.source !== "builtin" && candidate.hasPromptSnippet)
+    .map((candidate) => candidate.name)
+    .filter((name) => !reservedNames.has(name));
+}
+
 const STRICT_PRIOR_TASK_KINDS: ReadonlySet<TaskKind> = new Set(["bug_fix", "behavior_change", "refactor", "feature"]);
 const DOC_EXTENSIONS = new Set([".md", ".mdx", ".markdown", ".rst", ".adoc", ".txt"]);
 const EXTRA_CODE_EXTENSIONS = new Set([

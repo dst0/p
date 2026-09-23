@@ -140,6 +140,8 @@ describe("adaptive verification: backstop beyond bounded snapshots", () => {
   it("observes an extension tool that declares a workspace write", async () => {
     const adaptive = await setup(undefined, { extensionFactories: [workspaceWriter] });
     adaptive.respond(
+      // remote_patch defers to tool_search while LIGHT; activate it before using it.
+      tools(fauxToolCall("tool_search", { names: ["remote_patch"] })),
       tools(fauxToolCall("remote_patch", { path: "src/a.js", content: "export const value = 3;\n" })),
       tools(fauxToolCall("finish_work", { status: "partial", summary: "Patched src/a.js." })),
     );

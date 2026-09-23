@@ -1,5 +1,6 @@
 import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
 import { normalizePath } from "../../../utils/paths.ts";
+import type { DeferExtensionToolsPolicy } from "../../task-verification/task-tier.ts";
 import {
   type TaskVerificationConfiguration,
   taskVerificationConfigurationFromSettings,
@@ -148,6 +149,10 @@ export function do_getCompletionMode(self: SettingsManager): CompletionMode {
 /** Global-only: project settings cannot weaken or change the verification policy. */
 export function do_getTaskVerificationConfiguration(self: SettingsManager): TaskVerificationConfiguration {
   return taskVerificationConfigurationFromSettings(self.globalSettings.taskVerification);
+}
+
+export function do_getDeferExtensionToolsPolicy(self: SettingsManager): DeferExtensionToolsPolicy {
+  return self.settings.tools?.deferExtensionTools ?? "light";
 }
 
 export function do_getCompletionLimits(self: SettingsManager): CompletionProtocolLimits | undefined {

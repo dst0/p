@@ -1,7 +1,14 @@
 import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
 import type { Transport } from "@dst0/p-ai";
 import type { RunBudgetPolicy } from "../run-budget-policy.ts";
+import type { DeferExtensionToolsPolicy } from "../task-verification/task-tier.ts";
 import type { TaskVerificationSettings } from "../task-verification/verification-policy.ts";
+
+export interface ToolsSettings {
+  // default: "light" - defer extension/MCP tool auto-activation to tool_search while the verification
+  // tier is LIGHT; "always" defers regardless of tier; "never" always auto-activates (pre-deferral behavior).
+  deferExtensionTools?: DeferExtensionToolsPolicy;
+}
 
 export interface CompactionSettings {
   enabled?: boolean; // default: true
@@ -152,6 +159,7 @@ export interface Settings {
   planPanelCompactWidth?: number; // Compact plan panel width in columns (default: 50)
   planPanelHeight?: number; // Plan panel custom height in rows (undefined = auto)
   enableIndexingTray?: boolean; // default: true - whether to show system tray / menu bar status indicator for indexing
+  tools?: ToolsSettings;
 }
 
 export type SettingsScope = "global" | "project";
