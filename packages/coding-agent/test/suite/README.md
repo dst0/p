@@ -7,6 +7,7 @@ Rules:
 - Use the faux provider from `packages/ai/src/providers/faux.ts`
 - Do not use real provider APIs, real API keys, network calls, or paid tokens
 - Keep these tests CI-safe and deterministic
+- Never write to the real `~/.p/agent`; the Vitest setup isolates the default agent dir per test file (see `test/agent-dir-test-isolation.test.ts`)
 - Do not use or extend the legacy `test/test-harness.ts` path unless a missing capability forces it
 
 Organization:

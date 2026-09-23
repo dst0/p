@@ -14,6 +14,9 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000,
+		// Keep default agent-dir writes (sessions, settings, auth) out of the real ~/.p/agent.
+		globalSetup: ["./test/vitest-global-setup-agent-dir-root.ts"],
+		setupFiles: ["./test/vitest-setup-isolated-agent-dir.ts"],
 		server: {
 			deps: {
 				external: [/@silvia-odwyer\/photon-node/],

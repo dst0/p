@@ -68,6 +68,7 @@
 - Temporary release Git fixtures that recursively delete repositories, remotes, or clones must disable repository-local automatic and detached maintenance/GC unless the test explicitly owns and joins that background lifecycle.
 - Successful child-process regressions must give their kill timeout measured full-suite load margin rather than setting it near the focused runtime.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
+- Tests must never write to the real `~/.p/agent`. `packages/coding-agent` Vitest setup (`test/vitest-setup-isolated-agent-dir.ts`) points `P_CODING_AGENT_DIR` at a per-file temp dir and clears `P_CODING_AGENT_SESSION_DIR`; `test/agent-dir-test-isolation.test.ts` guards it. Do not bypass it, and restore these variables after deleting or overriding them.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 
 ## Version Bump

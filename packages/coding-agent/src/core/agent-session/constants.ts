@@ -5,7 +5,7 @@ export const RETRYABLE_ERROR_PATTERN =
   /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|failed to parse|could not parse|invalid json|unexpected token|unexpected end of json|response body|no response body|body is unusable/i;
 
 export const MODEL_RECOVERY_RETRY_PATTERN =
-  /loading model|model.*loading|model load|model.*not ready|no available workers?|no workers? available|workers?.*(?:unavailable|not ready|loading)/i;
+  /loading model|model.*loading|model load|model.*not ready|no (?:available|ready) workers?|no workers?.*(?:available|ready)|workers?.*(?:unavailable|not ready|loading)/i;
 
 export const MODEL_RECOVERY_MIN_RETRIES = 15;
 

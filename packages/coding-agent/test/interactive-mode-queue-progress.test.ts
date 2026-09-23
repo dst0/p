@@ -108,13 +108,81 @@ describe("InteractiveMode orchestrator queue progress", () => {
     expect(provider.getSendingProgress()).toBeUndefined();
   });
 
-  it("uses sending only when no orchestrator ticket is being retried", async () => {
-    const setModelSwitchProgress = vi.spyOn(provider, "setModelSwitchProgress");
+  it("keeps a recent model switch visible and uses sending after it expires", async () => {
     context.getRecentModelSwitch = () => ({ fromModel: "old-model", toModel: "tiny-model" });
     await handleEvent.call(context, { type: "request_start", model: { id: "tiny-model" } });
 
     expect(provider.getQueuedProgress()).toBeUndefined();
+    expect(provider.getSendingProgress()).toBeUndefined();
+    expect(provider.getModelSwitchProgress()).toEqual({ fromModel: "old-model", toModel: "tiny-model" });
+
+    context.getRecentModelSwitch = () => undefined;
+    await handleEvent.call(context, { type: "request_start", model: { id: "tiny-model" } });
+
     expect(provider.getSendingProgress()).toEqual({ model: "tiny-model" });
-    expect(setModelSwitchProgress).toHaveBeenCalledWith({ fromModel: "old-model", toModel: "tiny-model" });
+    expect(provider.getModelSwitchProgress()).toBeUndefined();
+  });
+
+  it("displays queue progress and model switch progress simultaneously", async () => {
+    const assistantMessage = {
+      role: "assistant" as const,
+      content: [],
+      stopReason: "stop",
+    };
+
+    await handleEvent.call(context, {
+      type: "message_update",
+      message: assistantMessage,
+      assistantMessageEvent: {
+        type: "model_switch_progress",
+        fromModel: "sokann-qwen-27b",
+        toModel: "qwen3.8-27b-iq4xs",
+        phase: "loading",
+      },
+    });
+
+    await handleEvent.call(context, {
+      type: "message_update",
+      message: assistantMessage,
+      assistantMessageEvent: {
+        type: "queue_progress",
+        queue: "worker",
+        position: 1,
+        queuedAhead: 0,
+        workerId: "mini-pc",
+        ticketId: "ticket-1",
+        queuedAtMs: 1_700_000_000_000,
+        queuedForMs: 1000,
+      },
+    });
+
+    expect(provider.getModelSwitchProgress()).toEqual({
+      fromModel: "sokann-qwen-27b",
+      toModel: "qwen3.8-27b-iq4xs",
+    });
+    expect(provider.getQueuedProgress()).toEqual({
+      queue: "worker",
+      position: 1,
+      queuedAhead: 0,
+      workerId: "mini-pc",
+      ticketId: "ticket-1",
+      queuedAt: 1_700_000_000_000,
+      queuedForMs: 1000,
+      source: "llm-orchestrator",
+    });
+
+    await handleEvent.call(context, {
+      type: "message_update",
+      message: assistantMessage,
+      assistantMessageEvent: {
+        type: "model_switch_progress",
+        fromModel: "sokann-qwen-27b",
+        toModel: "qwen3.8-27b-iq4xs",
+        phase: "complete",
+      },
+    });
+
+    expect(provider.getModelSwitchProgress()).toBeUndefined();
+    expect(provider.getQueuedProgress()?.ticketId).toBe("ticket-1");
   });
 });

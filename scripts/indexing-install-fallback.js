@@ -21,6 +21,8 @@ import {
 } from "./install-intel-openvino-npu.js";
 import { readCodeRagConfig, writeCodeRagConfig } from "./indexing-config.js";
 import { resolveFallbackDeviceChoices, resolveIndexingDevicePlan } from "./indexing-install-plans.js";
+import { isVersionScopedPath, resolveStableNodeExecutable } from "./indexing-service-node-executable.js";
+import { sanitizeServiceSearchPath } from "./indexing-service-search-path.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -115,19 +117,33 @@ export function persistManagedIndexingConfig(agentDirectory, managedConfig, reus
   return writeCodeRagConfig(agentDirectory, managedConfig);
 }
 
-export function buildServiceValues(devicePlan, venvPython) {
+export function buildServiceValues(
+  devicePlan,
+  venvPython,
+  { execPath = process.execPath, searchPath = process.env.PATH ?? "", isTemporary } = {},
+) {
   const ragDevice = devicePlan.ragDevice;
+  const pythonDirectory = path.resolve(path.dirname(venvPython));
+  const searchDirectories = sanitizeServiceSearchPath(searchPath, { isTemporary });
+  const node = resolveStableNodeExecutable(execPath, searchDirectories);
+  if (isVersionScopedPath(node)) {
+    console.warn(
+      `Code indexing service will launch version-scoped Node ${node}; rerun ./reinstall.sh after upgrading `
+      + "or removing that Node version.",
+    );
+  }
   const environment = {
     ...(devicePlan.installAmdPhoenixIron ? buildAmdPhoenixIronEnvironment(VENV_DIR) : {}),
     ...(devicePlan.installAmdRyzenAi ? buildAmdRyzenAiEnvironment(VENV_DIR) : {}),
     P_CODING_AGENT_DIR: AGENT_DIR,
-    PATH: `${path.dirname(venvPython)}:${process.env.PATH ?? ""}`,
+    PATH: [pythonDirectory, ...searchDirectories.filter((directory) => directory !== pythonDirectory)]
+      .join(path.delimiter),
     ...(ragDevice === "cpu"
       ? { CUDA_VISIBLE_DEVICES: "99", HIP_VISIBLE_DEVICES: "99", ROCR_VISIBLE_DEVICES: "99" }
       : {}),
   };
   return {
-    node: process.execPath,
+    node,
     daemon: DAEMON,
     root: ROOT,
     environment,

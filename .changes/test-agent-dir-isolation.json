@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Isolate the coding-agent Vitest agent directory per test file so test runs stop creating session directories in the real ~/.p/agent; changes only test infrastructure and contributor docs, not shipped runtime behavior."
+}

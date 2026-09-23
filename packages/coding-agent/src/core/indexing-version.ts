@@ -51,6 +51,8 @@ function collectIndexingFiles(projectRoot: string): string[] {
     "indexing-qdrant-assets.js",
     "indexing-service-reuse.js",
     "indexing-service-health.js",
+    "indexing-service-node-executable.js",
+    "indexing-service-search-path.js",
     "install-apple-coreai.js",
     "install-amd-ryzen-ai.js",
     "install-amd-xdna-driver.js",

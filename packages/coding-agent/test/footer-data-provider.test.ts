@@ -317,10 +317,10 @@ describe("FooterDataProvider progress state", () => {
     expect(provider.getLoadingProgress()).toBeUndefined();
   });
 
-  it("clears stale switch progress when llm-orchestrator queue progress arrives", () => {
+  it("preserves worker model switch progress alongside agent queue progress", () => {
     const provider = new FooterDataProvider(tempDir);
-
-    provider.setModelSwitchProgress({ fromModel: "misha-pc/misha-pc-model", toModel: "lms-micro/model" });
+    const modelSwitch = { fromModel: "misha-pc/misha-pc-model", toModel: "lms-micro/model" };
+    provider.setModelSwitchProgress(modelSwitch);
     provider.setQueuedProgress({
       position: 2,
       queuedAhead: 1,
@@ -337,7 +337,7 @@ describe("FooterDataProvider progress state", () => {
       source: "llm-orchestrator",
       queuedAt: expect.any(Number),
     });
-    expect(provider.getModelSwitchProgress()).toBeUndefined();
+    expect(provider.getModelSwitchProgress()).toEqual(modelSwitch);
   });
 
   it("keeps loading visible with the current model switch for retry display", () => {
