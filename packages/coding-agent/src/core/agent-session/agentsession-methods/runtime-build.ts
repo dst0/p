@@ -165,7 +165,10 @@ export async function do_reload(self: AgentSession): Promise<void> {
   self.syncQueueModesFromSettings();
   resetApiProviders();
   await self._resourceLoader.reload();
-  if (self._projectInstructionMode === "compiled") await self._projectInstructions.refresh();
+  // An explicit reload is the user's retry: bypass the compiler-failure backoff that automatic refreshes honor.
+  if (self._projectInstructionMode === "compiled") {
+    await self._projectInstructions.refresh({ retryFailedCompilation: true });
+  }
   self._buildRuntime({
     activeToolNames: self.getActiveToolNames(),
     flagValues: previousFlagValues,
@@ -195,6 +198,8 @@ export async function do_reload(self: AgentSession): Promise<void> {
   self._projectRuleReadStages.clear();
   self._queuedProjectRuleGates = new WeakMap();
   self._processingQueuedProjectRuleTurn = false;
+  // A reload that still cannot compile announces the legacy fallback again on the next turn.
+  if (self._projectInstructionFallbackNotice === "announced") self._projectInstructionFallbackNotice = "retried";
 }
 
 export function do__isNonRetryableProviderLimitError(_self: AgentSession, errorMessage: string): boolean {

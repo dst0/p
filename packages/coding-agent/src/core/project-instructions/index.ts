@@ -25,6 +25,7 @@ export type {
   ProjectInstructionController,
   ProjectInstructionDeliveryMode,
   ProjectInstructionManifest,
+  ProjectInstructionRefreshOptions,
   ProjectInstructionScope,
   ProjectInstructionState,
   ProjectInstructionTurnRoutes,

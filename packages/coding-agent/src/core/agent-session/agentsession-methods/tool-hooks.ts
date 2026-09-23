@@ -11,6 +11,7 @@ import type { AgentSession } from "../agentsession.ts";
 import { MARK_SESSION_PROGRESS_TOOL_NAME, UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
 import { getFinishWorkStatus, isRecord } from "../message-utils.ts";
 import { stageProjectInstructionActionBatch } from "../project-instruction-action-routing.ts";
+import { resolveProjectInstructionDelivery } from "../project-instruction-fallback-delivery.ts";
 import { PROJECT_RULE_RECEIPT_CUSTOM_TYPE } from "../project-instruction-integrity.ts";
 import { isTrustedProjectRuleTool } from "../project-rule-tool-trust.ts";
 
@@ -193,7 +194,7 @@ async function getProjectRuleBlockReason(
   toolName: string,
   args: unknown,
 ): Promise<string | undefined> {
-  if (self._projectInstructionMode !== "compiled") return undefined;
+  if (resolveProjectInstructionDelivery(self) !== "compiled") return undefined;
   let gate = self._projectRuleGate;
   const pendingBatches = gate?.batches.filter((batch) => !batch.satisfied) ?? [];
   if (toolName === "read_rules") {
@@ -218,6 +219,8 @@ async function getProjectRuleBlockReason(
       error instanceof Error ? error.message : String(error)
     }`;
   }
+  // Compilation became unavailable during this turn: degrade to legacy delivery instead of blocking.
+  if (refreshed.manifest.mode === "fallback") return undefined;
   if (!gate && refreshed.manifest.sources.length === 0 && refreshed.manifest.rules.length === 0) {
     gate = {
       inputHash: refreshed.manifest.inputHash,
@@ -228,9 +231,6 @@ async function getProjectRuleBlockReason(
   }
   if (!gate) {
     return "No project instruction freshness checkpoint exists for this turn. Start a new turn before mutating work.";
-  }
-  if (refreshed.manifest.mode === "fallback") {
-    return "Compiled project instructions are unavailable. Reload with project instruction mode legacy before mutating work.";
   }
   if (refreshed.manifest.inputHash !== gate.inputHash) {
     return "Project instruction routes changed during this turn. Reload the session before mutating work.";
