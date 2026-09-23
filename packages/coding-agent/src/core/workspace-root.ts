@@ -41,14 +41,8 @@ function resolveMainWorktreePath(canonicalWorkspaceRoot: string): string | undef
   }
   if (path.basename(gitCommonDir) !== ".git") return undefined;
   const candidateRoot = path.dirname(gitCommonDir);
+  // gitCommonDir is the resolved `<main>/.git` directory itself, so no further existence checks are needed.
   if (canonicalizePath(candidateRoot) === canonicalWorkspaceRoot) return undefined;
-  try {
-    const dotGit = path.join(candidateRoot, ".git");
-    if (!fs.statSync(dotGit).isDirectory()) return undefined;
-    if (!fs.existsSync(path.join(dotGit, "HEAD"))) return undefined;
-  } catch {
-    return undefined;
-  }
   return candidateRoot;
 }
 
