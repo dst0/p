@@ -136,6 +136,27 @@ describe("p update --self release source", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("prints the manual update instruction and installs nothing when no package manager manages this install", async () => {
+    h.installFakeNpm();
+    // A wrapper-linked checkout (for example via reinstall.sh) runs from a path no install method recognizes.
+    Object.defineProperty(process, "execPath", { value: "/usr/local/bin/node", configurable: true });
+    const newerVersion = getNewerPatchVersion();
+    h.stubNetwork((url) =>
+      url === REGISTRY_URL ? Response.json({ version: newerVersion }) : new Response("Not Found", { status: 404 }),
+    );
+
+    await main(["update", "--self"]);
+
+    expect(h.requestedUrls).toEqual([REGISTRY_URL, releaseNotesUrl(newerVersion)]);
+    expect(h.stderr()).toContain("error: p cannot self-update this installation.");
+    expect(h.stderr()).toContain(
+      `Update ${PACKAGE_NAME} using the package manager, wrapper, or source checkout that provides this installation.`,
+    );
+    expect(h.recordedNpmCalls()).toEqual([]);
+    expect(h.stdout()).not.toMatch(/Updating p with|Updated p\b/);
+    expect(process.exitCode).toBe(1);
+  });
+
   it("reports a failed install of this package without claiming success", async () => {
     h.installFakeNpm({ failInstall: true });
     const newerVersion = getNewerPatchVersion();
