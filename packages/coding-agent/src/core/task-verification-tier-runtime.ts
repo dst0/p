@@ -37,7 +37,7 @@ const ESCALATION_CAUSES: Partial<Record<VerificationTierReason, string>> = {
   effect_test: "test change",
   effect_config: "build config change",
   effect_untracked: "untracked change",
-  model_declared: "begin_code_task",
+  model_declared: "declared code task",
   prior: "code task",
   user_override: "/verify",
 };
