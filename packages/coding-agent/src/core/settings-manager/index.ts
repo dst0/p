@@ -1,4 +1,4 @@
-export { DEFAULT_AGENT_RETRY_BASE_DELAY_MS } from "./constants.ts";
+export { DEFAULT_AGENT_RETRY_BASE_DELAY_MS, DEFAULT_HOST_UNAVAILABLE_MAX_MS } from "./constants.ts";
 export { FileSettingsStorage } from "./filesettingsstorage.ts";
 export { InMemorySettingsStorage } from "./inmemorysettingsstorage.ts";
 export { SettingsManager } from "./settingsmanager.ts";

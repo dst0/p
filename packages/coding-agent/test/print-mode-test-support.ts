@@ -18,6 +18,8 @@ type FakeSession = {
   subscribe: ReturnType<typeof vi.fn>;
   prompt: ReturnType<typeof vi.fn>;
   reload: ReturnType<typeof vi.fn>;
+  isRetrying: boolean;
+  abortRetry: ReturnType<typeof vi.fn>;
 };
 
 type FakeRuntimeHost = {
@@ -107,6 +109,10 @@ export function createRuntimeHost(
       }
     }),
     reload: vi.fn(async () => {}),
+    isRetrying: false,
+    abortRetry: vi.fn(() => {
+      session.isRetrying = false;
+    }),
   };
 
   return {

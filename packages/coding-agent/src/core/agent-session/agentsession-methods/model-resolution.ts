@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { getImageModel, getImageModels, getImageProviders, type ImagesApi, type ImagesModel } from "@dst0/p-ai";
 import type { AgentSession } from "../agentsession.ts";
+import { classifyHostRetry, describeBaseUrlHost } from "../host-retry-classification.ts";
 
 export async function do__runAgentPrompt(self: AgentSession, messages: AgentMessage | AgentMessage[]): Promise<void> {
   try {
@@ -32,11 +33,17 @@ export async function do__handlePostAgentRun(self: AgentSession): Promise<boolea
   }
 
   if (msg.stopReason === "error" && self._retryAttempt > 0) {
+    // ECONNREFUSED on loopback exhausts its (unextended) budget without ever recovering on
+    // its own; add an actionable hint since waiting longer would not have helped.
+    const isLoopbackRefused = classifyHostRetry(msg.errorMessage, self.model?.baseUrl) === "loopback_refused";
+    const finalError = isLoopbackRefused
+      ? `${msg.errorMessage} (local model server at ${describeBaseUrlHost(self.model?.baseUrl)} is not running)`
+      : msg.errorMessage;
     self._emit({
       type: "auto_retry_end",
       success: false,
       attempt: self._retryAttempt,
-      finalError: msg.errorMessage,
+      finalError,
     });
     self._retryAttempt = 0;
   }

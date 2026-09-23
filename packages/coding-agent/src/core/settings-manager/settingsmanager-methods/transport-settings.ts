@@ -1,6 +1,6 @@
 import { DEFAULT_COMPACTION_SETTINGS } from "../../compaction/default-settings.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS } from "../../http-dispatcher.ts";
-import { DEFAULT_AGENT_RETRY_BASE_DELAY_MS } from "../constants.ts";
+import { DEFAULT_AGENT_RETRY_BASE_DELAY_MS, DEFAULT_HOST_UNAVAILABLE_MAX_MS } from "../constants.ts";
 import { parseTimeoutSetting } from "../helpers.ts";
 import type { SettingsManager } from "../settingsmanager.ts";
 import type { TransportSetting } from "../types.ts";
@@ -144,11 +144,13 @@ export function do_getRetrySettings(self: SettingsManager): {
   enabled: boolean;
   maxRetries: number;
   baseDelayMs: number;
+  hostUnavailableMaxMs: number;
 } {
   return {
     enabled: self.getRetryEnabled(),
     maxRetries: self.settings.retry?.maxRetries ?? 3,
     baseDelayMs: self.settings.retry?.baseDelayMs ?? DEFAULT_AGENT_RETRY_BASE_DELAY_MS,
+    hostUnavailableMaxMs: self.settings.retry?.hostUnavailableMaxMs ?? DEFAULT_HOST_UNAVAILABLE_MAX_MS,
   };
 }
 
