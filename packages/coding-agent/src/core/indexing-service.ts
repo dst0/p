@@ -5,11 +5,11 @@ import { getAgentDir } from "../config.ts";
 import {
   disableIndexingForRepo,
   enableIndexingForRepo,
-  getRepoIndexingDecision,
   prioritizeIndexingForRepo,
   type RepoIndexingDecision,
 } from "./indexed-repos.ts";
 import { readIndexingSelectionConfiguration } from "./indexing-config-reader.ts";
+import { type RepoDecisionInfo, resolveRepoDecision } from "./indexing-decision-inheritance.ts";
 
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
 export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
@@ -18,6 +18,9 @@ const INDEXING_SERVICE_REINSTALL_GRACE_MS = 5 * 60_000;
 export interface IndexStatus {
   decision: RepoIndexingDecision;
   indexed: boolean;
+  /** Set when this repo has no decision of its own but is a linked worktree whose main
+   * checkout does; the worktree is never auto-indexed, only exempted from the prompt. */
+  inheritedFrom?: string;
   serviceRunning: boolean;
   configuredDevice?: string;
   configuredMaxBatchSize?: number;
@@ -80,19 +83,30 @@ export class IndexingService {
   }
 
   getDecision(workspaceRoot: string): RepoIndexingDecision {
-    return getRepoIndexingDecision(workspaceRoot, this.agentDir);
+    return this.resolveDecision(workspaceRoot).decision;
+  }
+
+  /**
+   * Resolves the indexing decision for `workspaceRoot`, inheriting a linked git worktree's
+   * main checkout decision (without persisting or auto-indexing anything) so the worktree
+   * does not re-prompt for a decision the main checkout already made. See
+   * `indexing-decision-inheritance.ts` for the inheritance and caching rules.
+   */
+  resolveDecision(workspaceRoot: string): RepoDecisionInfo {
+    return resolveRepoDecision(workspaceRoot, this.agentDir);
   }
 
   getStatus(workspaceRoot: string): IndexStatus {
     const resolved = canonicalizePath(workspaceRoot);
-    const decision = this.getDecision(resolved);
+    const decisionInfo = this.resolveDecision(resolved);
     const daemonStatus = readServiceStatus(this.agentDir);
     const repoStatus = daemonStatus?.repos.find((entry) => canonicalizePath(entry.path) === resolved);
     const configuredDevice = getConfiguredIndexingDevice(this.agentDir);
     const configuredMaxBatchSize = getConfiguredIndexingBatchSize(this.agentDir);
     return {
-      decision,
-      indexed: decision === "enabled",
+      decision: decisionInfo.decision,
+      indexed: decisionInfo.decision === "enabled",
+      inheritedFrom: decisionInfo.inheritedFrom,
       serviceRunning: daemonStatus?.running === true,
       configuredDevice,
       configuredMaxBatchSize,

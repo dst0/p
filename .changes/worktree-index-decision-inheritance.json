@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Stop prompting to index a new `git worktree` when its main checkout already has a saved indexing decision: suppress the modal (without auto-indexing or persisting anything for the worktree) and show `/index`/the footer as inheriting the main checkout's decision."
+}
