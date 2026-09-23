@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Stop `record_task_verification`'s `source_output_paths` from demanding user authorization for a path that was never selected as an authoritative requirement source; only real authoritative sources still require the `[source-output:...]` marker."
+}

@@ -16,7 +16,7 @@ import type {
   TaskVerificationCriticalProofObligation,
   VerificationResult,
 } from "../types.ts";
-import { declareCriticalProofSourceOutputs } from "./critical-proof-source-output.ts";
+import { declareCriticalProofSourceOutputs, nonAuthoritativeSourceOutputNote } from "./critical-proof-source-output.ts";
 import { selectCriticalProofSources } from "./evidence-critical-proof-selection.ts";
 
 const EXACT_FINAL_BYTE_PATTERN =
@@ -61,6 +61,7 @@ export function recordCompletionChecklist(
   if (selectionError) return self.rejected(selectionError);
   const sourceOutputError = declareCriticalProofSourceOutputs(self, input.source_output_paths, normalized);
   if (sourceOutputError) return self.rejected(sourceOutputError);
+  const sourceOutputNote = nonAuthoritativeSourceOutputNote(self, input.source_output_paths);
   if (recoveringSourceOutput) self.restoreError = frozenSourceOutputRestoreError(self);
   const discoveryFailure = criticalProofDiscoveryFailureMessage(self);
   if (discoveryFailure) return self.rejected(discoveryFailure);
@@ -71,7 +72,13 @@ export function recordCompletionChecklist(
   if (missingObligation) return self.rejected(missingCriticalProofMessage(missingObligation));
   if (existing && sameStrings(existing.sourcePromptIds, sourcePromptIds)) {
     if (sameStrings(existing.criteria, normalized)) {
-      return self.updated("The current completion checklist is already recorded; continue with implementation.", false);
+      return self.updated(
+        withNote(
+          "The current completion checklist is already recorded; continue with implementation.",
+          sourceOutputNote,
+        ),
+        false,
+      );
     }
     const existingMissesNewObligation = (self.state.criticalProofObligations ?? []).some(
       (obligation) => !checklistCoversCriticalProof(existing.criteria, obligation),
@@ -97,9 +104,16 @@ export function recordCompletionChecklist(
   };
   self.persistState();
   return self.updated(
-    `Completion checklist recorded with ${normalized.length} behavioral check${normalized.length === 1 ? "" : "s"}.`,
+    withNote(
+      `Completion checklist recorded with ${normalized.length} behavioral check${normalized.length === 1 ? "" : "s"}.`,
+      sourceOutputNote,
+    ),
     false,
   );
+}
+
+function withNote(message: string, note: string | undefined): string {
+  return note ? `${message} ${note}` : message;
 }
 
 export function evidenceMutationChecklistGate(
