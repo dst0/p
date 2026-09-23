@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Adds a manual developer micro-benchmark script comparing p and pi on everyday tasks; no shipped behavior changes."
+}
