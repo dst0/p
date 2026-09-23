@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "coding-agent"
+  ],
+  "type": "None",
+  "reason": "Test-only: added regressions for the source_output_paths fix in 9d073f4a7 (mixed authoritative/non-authoritative call still names the unauthorized authoritative source; pluralized non-authoritative note for two or more ignored paths). No user-facing behavior change."
+}

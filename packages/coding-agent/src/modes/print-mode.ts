@@ -8,6 +8,7 @@
 
 import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
 import type { ImageContent } from "@dst0/p-ai";
+import type { AgentSessionEvent } from "../core/agent-session/session-types.ts";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { getTaskVerificationCompletionPayload } from "../core/task-verification/verified-completion.ts";
@@ -95,6 +96,20 @@ function getSessionStateTextModeFinalOutput(messages: readonly AgentMessage[]): 
   return getTextModeFinalOutput(lastMessage ? [lastMessage] : []);
 }
 
+/** Single stderr line shown per retry so a long wait isn't silent in text mode. */
+function formatRetryStderrLine(event: Extract<AgentSessionEvent, { type: "auto_retry_start" }>): string {
+  const seconds = Math.ceil(event.delayMs / 1000);
+  const prefix =
+    event.reason === "host_unavailable"
+      ? "model host unreachable"
+      : event.reason === "local_server_down"
+        ? "local model server not running"
+        : event.reason === "model_loading"
+          ? "model switching"
+          : "retrying";
+  return `${prefix}; retrying in ${seconds}s (attempt ${event.attempt}/${event.maxAttempts}), Ctrl+C to stop`;
+}
+
 /**
  * Run in print (single-shot) mode.
  * Sends prompts to the agent and outputs the result.
@@ -133,7 +148,23 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
     }
   };
 
+  const registerSigintHandler = (): void => {
+    // While waiting out an auto-retry backoff, Ctrl+C cancels just the wait (same path as
+    // the interactive TUI's Esc) instead of killing the whole process outright.
+    const handler = () => {
+      if (session.isRetrying) {
+        session.abortRetry();
+        return;
+      }
+      killTrackedDetachedChildren();
+      void disposeRuntime().finally(() => process.exit(130));
+    };
+    process.on("SIGINT", handler);
+    signalCleanupHandlers.push(() => process.off("SIGINT", handler));
+  };
+
   registerSignalHandlers();
+  registerSigintHandler();
 
   runtimeHost.setRebindSession(async () => {
     await rebindSession();
@@ -175,6 +206,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
     unsubscribe = session.subscribe((event) => {
       if (event.type === "agent_end" && !event.willRetry) {
         latestAgentEndMessages = event.messages;
+      }
+      if (mode === "text" && event.type === "auto_retry_start") {
+        console.error(formatRetryStderrLine(event));
       }
       if (mode === "json") {
         writeRawStdout(`${JSON.stringify(projectJsonEvent(event))}\n`);

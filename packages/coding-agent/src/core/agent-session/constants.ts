@@ -13,6 +13,9 @@ export const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 
 export const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 
+// See host-retry-classification.ts for the local/LAN host-unavailable retry classifier
+// (HOST_UNREACHABLE_RETRY_PATTERN, classifyHostRetry, computeHostUnavailableMaxAttempts, ...).
+
 export const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
 
 export const MARK_SESSION_PROGRESS_TOOL_NAME = "mark_session_progress";

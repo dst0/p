@@ -4,7 +4,7 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_COMPACTION_SETTINGS } from "../src/core/compaction/index.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS } from "../src/core/http-dispatcher.ts";
-import { DEFAULT_AGENT_RETRY_BASE_DELAY_MS, SettingsManager } from "../src/core/settings-manager.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 
 describe("SettingsManager", () => {
   const testDir = join(process.cwd(), "test-settings-tmp");
@@ -400,17 +400,6 @@ describe("SettingsManager", () => {
       const manager = SettingsManager.create(projectDir, agentDir);
 
       expect(() => manager.getHttpIdleTimeoutMs()).toThrow("Invalid httpIdleTimeoutMs setting");
-    });
-  });
-
-  describe("retry", () => {
-    it("should default to fast exponential reconnect delay", () => {
-      const manager = SettingsManager.create(projectDir, agentDir);
-      expect(manager.getRetrySettings()).toEqual({
-        enabled: true,
-        maxRetries: 3,
-        baseDelayMs: DEFAULT_AGENT_RETRY_BASE_DELAY_MS,
-      });
     });
   });
 

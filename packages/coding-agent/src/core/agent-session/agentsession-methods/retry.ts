@@ -10,6 +10,11 @@ import {
   MODEL_RECOVERY_MIN_RETRIES,
   MODEL_RECOVERY_RETRY_PATTERN,
 } from "../constants.ts";
+import {
+  classifyHostRetry,
+  computeHostUnavailableMaxAttempts,
+  HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS,
+} from "../host-retry-classification.ts";
 
 export async function do__prepareRetry(self: AgentSession, message: AssistantMessage): Promise<boolean> {
   const settings = self.settingsManager.getRetrySettings();
@@ -66,31 +71,51 @@ export async function do__prepareRetry(self: AgentSession, message: AssistantMes
 }
 
 export function do__getEffectiveRetryMaxAttempts(
-  _self: AgentSession,
+  self: AgentSession,
   message: AssistantMessage,
   configuredMaxRetries: number,
 ): number {
-  if (MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) {
     return Math.max(configuredMaxRetries, MODEL_RECOVERY_MIN_RETRIES);
+  }
+  // "loopback_refused" keeps the normal budget: the local server process isn't running, and
+  // no amount of waiting fixes that (see do__getRetryReason for the accompanying hint).
+  if (classifyHostRetry(errorMessage, self.model?.baseUrl) === "extended") {
+    const settings = self.settingsManager.getRetrySettings();
+    const attempts = computeHostUnavailableMaxAttempts(settings.baseDelayMs, settings.hostUnavailableMaxMs);
+    return Math.max(configuredMaxRetries, attempts);
   }
   return configuredMaxRetries;
 }
 
-export function do__getRetryReason(_self: AgentSession, message: AssistantMessage): "model_loading" | "transient" {
-  return MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "") ? "model_loading" : "transient";
+export function do__getRetryReason(
+  self: AgentSession,
+  message: AssistantMessage,
+): "model_loading" | "host_unavailable" | "local_server_down" | "transient" {
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) return "model_loading";
+  const hostClass = classifyHostRetry(errorMessage, self.model?.baseUrl);
+  if (hostClass === "extended") return "host_unavailable";
+  if (hostClass === "loopback_refused") return "local_server_down";
+  return "transient";
 }
 
 export function do__getRetryDelayMs(
-  _self: AgentSession,
+  self: AgentSession,
   message: AssistantMessage,
   attempt: number,
   baseDelayMs: number,
 ): number {
-  if (!MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
-    return baseDelayMs * 2 ** (attempt - 1);
+  const errorMessage = message.errorMessage ?? "";
+  if (MODEL_RECOVERY_RETRY_PATTERN.test(errorMessage)) {
+    const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
+    return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
   }
-  const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
-  return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
+  if (classifyHostRetry(errorMessage, self.model?.baseUrl) === "extended") {
+    return Math.min(baseDelayMs * 2 ** (attempt - 1), HOST_UNAVAILABLE_MAX_RETRY_DELAY_MS);
+  }
+  return baseDelayMs * 2 ** (attempt - 1);
 }
 
 export function do_abortRetry(self: AgentSession): void {

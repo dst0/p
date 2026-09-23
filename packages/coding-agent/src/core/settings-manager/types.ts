@@ -40,6 +40,8 @@ export interface RetrySettings {
   enabled?: boolean; // default: true
   maxRetries?: number; // default: 3
   baseDelayMs?: number; // default: 500 (exponential backoff: 0.5s, 1s, 2s)
+  /** default: 600000 (10 min total backoff budget when a local/LAN model host is unreachable) */
+  hostUnavailableMaxMs?: number;
   provider?: ProviderRetrySettings;
 }
 
