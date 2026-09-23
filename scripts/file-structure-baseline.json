@@ -553,7 +553,7 @@
   },
   "packages/coding-agent/test/settings-manager.test.ts": {
     "classes": 0,
-    "lines": 606
+    "lines": 595
   },
   "packages/coding-agent/test/show-harness-messages.test.ts": {
     "classes": 0,
