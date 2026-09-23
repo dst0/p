@@ -81,7 +81,7 @@ export function getSelfUpdateUnavailableInstruction(
 ): string {
   const method = detectInstallMethod();
   if (method === "bun-binary") {
-    return `Download from: https://github.com/dst0/p-mono/releases/latest`;
+    return `Download from: https://github.com/dst0/p/releases/latest`;
   }
   if (method === "source-checkout") {
     return `Run: cd ${findGitRoot(getPackageDir())} && git pull && npm run build`;

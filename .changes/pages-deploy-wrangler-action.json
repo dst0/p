@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Replace the removed Cloudflare Pages deploy action with the SHA-pinned Wrangler action and a separately locked Wrangler toolchain, and test workflow action pins; CI and site deployment only."
+}
