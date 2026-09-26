@@ -212,7 +212,9 @@ if (args.includes("run")) {
 
 test(
   "sandboxed certified preflight blocks malicious attempts to read external files",
-  { skip: !benchmarkSandboxExecutable() },
+  {
+    skip: !benchmarkSandboxExecutable(),
+  },
   async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "sandboxed-preflight-test-")));
     try {

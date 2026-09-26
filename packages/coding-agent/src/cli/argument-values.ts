@@ -17,8 +17,8 @@ const COMPLETION_MODE_ALIASES = {
 
 export const COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish", "hybrid"] as const;
 export const PROJECT_INSTRUCTION_MODES = ["compiled", "legacy", "off"] as const;
-export { isTaskVerificationSelection, TASK_VERIFICATION_SELECTIONS };
 export type { ProjectInstructionDeliveryMode, TaskVerificationSelection };
+export { isTaskVerificationSelection, TASK_VERIFICATION_SELECTIONS };
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
   return THINKING_LEVELS.includes(level as ThinkingLevel);

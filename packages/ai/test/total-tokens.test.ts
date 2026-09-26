@@ -106,7 +106,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic (API Key)", () => {
     it(
       "claude-sonnet-4-5 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("anthropic", "claude-sonnet-4-5");
 
@@ -176,7 +179,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses", () => {
     it(
       "claude-haiku-4.5 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openai", "gpt-4o");
 
@@ -216,7 +222,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
     it(
       "gemini-2.0-flash - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("google", "gemini-2.0-flash");
 
@@ -258,7 +267,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.GROQ_API_KEY)("Groq", () => {
     it(
       "openai/gpt-oss-120b - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("groq", "openai/gpt-oss-120b");
 
@@ -281,7 +293,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras", () => {
     it(
       "gpt-oss-120b - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("cerebras", "gpt-oss-120b");
 
@@ -304,7 +319,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI", () => {
     it(
       "@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
 
@@ -329,7 +347,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway", () => {
     it(
       "workers-ai/@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
 
@@ -414,7 +435,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
     it(
       "devstral-medium-latest - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("mistral", "devstral-medium-latest");
 
@@ -437,7 +461,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
     it(
       "MiniMax-M2.7 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("minimax", "MiniMax-M2.7");
 
@@ -460,7 +487,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.XIAOMI_API_KEY)("Xiaomi MiMo (API billing)", () => {
     it(
       "mimo-v2.5-pro - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("xiaomi", "mimo-v2.5-pro");
 
@@ -483,7 +513,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_CN_API_KEY)("Xiaomi MiMo Token Plan (CN)", () => {
     it(
       "mimo-v2.5-pro - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("xiaomi-token-plan-cn", "mimo-v2.5-pro");
 
@@ -508,7 +541,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_AMS_API_KEY)("Xiaomi MiMo Token Plan (AMS)", () => {
     it(
       "mimo-v2.5-pro - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("xiaomi-token-plan-ams", "mimo-v2.5-pro");
 
@@ -533,7 +569,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_SGP_API_KEY)("Xiaomi MiMo Token Plan (SGP)", () => {
     it(
       "mimo-v2.5-pro - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("xiaomi-token-plan-sgp", "mimo-v2.5-pro");
 
@@ -558,7 +597,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
     it(
       "kimi-for-coding - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("kimi-coding", "kimi-for-coding");
 
@@ -581,7 +623,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway", () => {
     it(
       "google/gemini-2.5-flash - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
@@ -604,7 +649,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter", () => {
     it(
       "anthropic/claude-sonnet-4 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openrouter", "anthropic/claude-sonnet-4");
 
@@ -621,7 +669,10 @@ describe("totalTokens field", () => {
 
     it(
       "deepseek/deepseek-chat - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openrouter", "deepseek/deepseek-chat");
 
@@ -638,7 +689,10 @@ describe("totalTokens field", () => {
 
     it(
       "mistralai/mistral-small-3.2-24b-instruct - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openrouter", "mistralai/mistral-small-3.2-24b-instruct");
 
@@ -655,7 +709,10 @@ describe("totalTokens field", () => {
 
     it(
       "google/gemini-2.5-flash - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openrouter", "google/gemini-2.5-flash");
 
@@ -672,7 +729,10 @@ describe("totalTokens field", () => {
 
     it(
       "deepseek/deepseek-chat - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("openrouter", "deepseek/deepseek-chat");
 
@@ -737,7 +797,10 @@ describe("totalTokens field", () => {
   describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
     it(
       "claude-sonnet-4-5 - should return totalTokens equal to sum of components",
-      { retry: 3, timeout: 60000 },
+      {
+        retry: 3,
+        timeout: 60000,
+      },
       async () => {
         const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 

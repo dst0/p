@@ -18,14 +18,14 @@ export { createBenchmarkGateFailure } from "./failure.ts";
 export { assessSample } from "./run-assessment.ts";
 
 export {
-  PROJECT_INSTRUCTION_CONDITIONS,
-  DEFAULT_PROJECT_INSTRUCTION_CONDITIONS,
   buildPairedSchedule,
+  conditionConfiguration,
+  DEFAULT_PROJECT_INSTRUCTION_CONDITIONS,
+  type PairedScheduleCell,
+  PROJECT_INSTRUCTION_CONDITIONS,
   type ProjectInstructionCondition,
   type ProjectInstructionMode,
-  type PairedScheduleCell,
   type TaskVerificationMode,
-  conditionConfiguration,
 };
 export const PROJECT_INSTRUCTION_TASKS = [
   "typescript-calculator",

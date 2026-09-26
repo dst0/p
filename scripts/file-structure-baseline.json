@@ -197,7 +197,7 @@
   },
   "packages/ai/test/total-tokens.test.ts": {
     "classes": 0,
-    "lines": 778
+    "lines": 841
   },
   "packages/ai/test/unicode-surrogate.test.ts": {
     "classes": 0,
@@ -341,7 +341,7 @@
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
-    "lines": 436
+    "lines": 437
   },
   "packages/coding-agent/src/core/skills.ts": {
     "classes": 0,

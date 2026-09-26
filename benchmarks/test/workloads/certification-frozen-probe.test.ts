@@ -10,7 +10,9 @@ import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
 
 test(
   "certified setup executes the project-instruction probe from the frozen candidate",
-  { skip: process.platform !== "darwin" },
+  {
+    skip: process.platform !== "darwin",
+  },
   () => {
     const root = mkdtempSync(join(tmpdir(), "certified-frozen-probe-"));
     const repo = join(root, "repo");
