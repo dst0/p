@@ -43,10 +43,10 @@ export function do__extractUserMessageText(
 
 export function do_getSessionStats(self: AgentSession): SessionStats {
   const messages = self.messages;
-  const userMessages = messages.filter((m) => m.role === "user").length;
-  const assistantMessages = messages.filter((m) => m.role === "assistant").length;
-  const toolResults = messages.filter((m) => m.role === "toolResult").length;
 
+  let userMessages = 0;
+  let assistantMessages = 0;
+  let toolResults = 0;
   let toolCalls = 0;
   let totalInput = 0;
   let totalOutput = 0;
@@ -54,15 +54,25 @@ export function do_getSessionStats(self: AgentSession): SessionStats {
   let totalCacheWrite = 0;
   let totalCost = 0;
 
+  // Single-pass optimization: Iterate over messages once to tally counts and costs,
+  // replacing O(4N) array allocations from chained `.filter()` operations with O(1) space.
+  // Reduces garbage collection pressure on large sessions.
   for (const message of messages) {
-    if (message.role === "assistant") {
+    if (message.role === "user") {
+      userMessages++;
+    } else if (message.role === "assistant") {
+      assistantMessages++;
       const assistantMsg = message as AssistantMessage;
-      toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+      for (const c of assistantMsg.content) {
+        if (c.type === "toolCall") toolCalls++;
+      }
       totalInput += assistantMsg.usage.input;
       totalOutput += assistantMsg.usage.output;
       totalCacheRead += assistantMsg.usage.cacheRead;
       totalCacheWrite += assistantMsg.usage.cacheWrite;
       totalCost += assistantMsg.usage.cost.total;
+    } else if (message.role === "toolResult") {
+      toolResults++;
     }
   }
 
