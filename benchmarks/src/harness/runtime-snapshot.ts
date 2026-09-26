@@ -15,7 +15,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import ts from "typescript";
+import { relativeModuleSpecifiers } from "./runtime-snapshot-imports.ts";
 
 const runtimePackages = ["ai", "tui", "agent", "code-index", "coding-agent", "site"];
 const BENCHMARK_SOURCE_ROOT = join("benchmarks", "src");
@@ -29,31 +29,39 @@ const BENCHMARK_CLOSURE_SEEDS = [
   BENCHMARK_SEED_HELPER,
   join(BENCHMARK_SOURCE_ROOT, "harness", "seed-helper-process.ts"),
 ];
+const BENCHMARK_CANDIDATE_SEEDS = [BENCHMARK_PROJECT_INSTRUCTION_PROBE];
 const EVALUATOR_FIXTURE_NAMES = new Set(["hidden.test.ts", "rubric.json"]);
 
-export type BenchmarkFixtureScope = "all" | "candidate" | "evaluator";
-
-export interface RuntimeSnapshotOptions {
-  fixtureScope?: BenchmarkFixtureScope;
-}
+type BenchmarkFixtureScope = "all" | "candidate" | "evaluator";
 
 export function assertEmptyOutputDirectory(path: string): void {
   if (existsSync(path) && readdirSync(path).length > 0) throw new Error(`Output directory is not empty: ${path}`);
 }
 
-export function createRuntimeSnapshot(
-  repoRoot: string,
-  temporaryParent: string,
-  options: RuntimeSnapshotOptions = {},
-): string {
+export function createRuntimeSnapshot(repoRoot: string, temporaryParent: string): string {
+  return createSnapshot(repoRoot, temporaryParent, "all");
+}
+
+function createSnapshot(repoRoot: string, temporaryParent: string, scope: "all" | "candidate"): string {
   const snapshot = mkdtempSync(join(temporaryParent, "p-benchmark-runtime-"));
   try {
     const copyOptions = { mode: fsConstants.COPYFILE_FICLONE, recursive: true, verbatimSymlinks: true };
     cpSync(join(repoRoot, "node_modules"), join(snapshot, "node_modules"), copyOptions);
     cpSync(join(repoRoot, "package.json"), join(snapshot, "package.json"), copyOptions);
     cpSync(join(repoRoot, "package-lock.json"), join(snapshot, "package-lock.json"), copyOptions);
-    snapshotBenchmarkRunnerClosure(repoRoot, snapshot, copyOptions);
-    copyBenchmarkFixtures(repoRoot, snapshot, options.fixtureScope ?? "all", copyOptions);
+    snapshotBenchmarkClosure(
+      repoRoot,
+      snapshot,
+      scope === "candidate" ? BENCHMARK_CANDIDATE_SEEDS : BENCHMARK_CLOSURE_SEEDS,
+      scope === "candidate",
+      copyOptions,
+    );
+    copyFixtureTree(
+      join(repoRoot, "benchmarks", "fixtures"),
+      join(snapshot, "benchmarks", "fixtures"),
+      scope,
+      copyOptions,
+    );
     for (const pkg of runtimePackages) {
       const target = join(snapshot, "packages", pkg);
       mkdirSync(target, { recursive: true });
@@ -70,7 +78,7 @@ export function createRuntimeSnapshot(
 }
 
 export function createCandidateRuntimeSnapshot(repoRoot: string, temporaryParent: string): string {
-  return createRuntimeSnapshot(repoRoot, temporaryParent, { fixtureScope: "candidate" });
+  return createSnapshot(repoRoot, temporaryParent, "candidate");
 }
 
 export function copyBenchmarkEvaluatorFixtures(
@@ -78,18 +86,12 @@ export function copyBenchmarkEvaluatorFixtures(
   destination: string,
   copyOptions: CopySyncOptions = {},
 ): void {
-  copyBenchmarkFixtures(repoRoot, destination, "evaluator", copyOptions);
-}
-
-function copyBenchmarkFixtures(
-  repoRoot: string,
-  destination: string,
-  scope: BenchmarkFixtureScope,
-  copyOptions: CopySyncOptions,
-): void {
-  const source = join(repoRoot, "benchmarks", "fixtures");
-  const target = join(destination, "benchmarks", "fixtures");
-  copyFixtureTree(source, target, scope, copyOptions);
+  copyFixtureTree(
+    join(repoRoot, "benchmarks", "fixtures"),
+    join(destination, "benchmarks", "fixtures"),
+    "evaluator",
+    copyOptions,
+  );
 }
 
 function copyFixtureTree(
@@ -138,15 +140,29 @@ export function snapshotBenchmarkRunnerClosure(
   snapshot: string,
   copyOptions: CopySyncOptions = {},
 ): void {
+  snapshotBenchmarkClosure(repoRoot, snapshot, BENCHMARK_CLOSURE_SEEDS, false, copyOptions);
+}
+
+function snapshotBenchmarkClosure(
+  repoRoot: string,
+  snapshot: string,
+  seeds: readonly string[],
+  candidateOnly: boolean,
+  copyOptions: CopySyncOptions,
+): void {
   const sourceRoot = join(repoRoot, BENCHMARK_SOURCE_ROOT);
-  const pending = BENCHMARK_CLOSURE_SEEDS.map((path) => join(repoRoot, path));
-  const copied = new Set();
+  const candidateRoot = join(sourceRoot, "project-instructions");
+  const pending = seeds.map((path) => join(repoRoot, path));
+  const copied = new Set<string>();
   while (pending.length > 0) {
     const source = pending.pop();
     if (source === undefined) break;
     if (copied.has(source)) continue;
     if (!isPathInside(sourceRoot, source) || !source.endsWith(".ts") || !existsSync(source)) {
       throw new Error(`Benchmark source import escapes or is missing from benchmarks/src: ${source}`);
+    }
+    if (candidateOnly && !isPathInside(candidateRoot, source)) {
+      throw new Error(`Candidate snapshot import outside project-instructions: ${source}`);
     }
     copied.add(source);
     const destination = join(snapshot, BENCHMARK_SOURCE_ROOT, relative(sourceRoot, source));
@@ -168,51 +184,6 @@ function isRuntimePackageModule(repoRoot: string, path: string): boolean {
     path.endsWith(".js") &&
     existsSync(path) &&
     runtimePackages.some((pkg) => isPathInside(join(repoRoot, "packages", pkg, "dist"), path))
-  );
-}
-
-function relativeModuleSpecifiers(contents: string, source: string): string[] {
-  const parsed = ts.createSourceFile(source, contents, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const specifiers: string[] = [];
-  const visit = (node: ts.Node): void => {
-    let specifier: ts.Expression | undefined;
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      !isTypeOnlyModuleDeclaration(node)
-    ) {
-      specifier = node.moduleSpecifier;
-    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      throw new Error(`Benchmark source contains a dynamic import: ${source}`);
-    }
-    if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith(".")) {
-      specifiers.push(specifier.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(parsed);
-  return specifiers;
-}
-
-function isTypeOnlyModuleDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
-  if (ts.isExportDeclaration(node)) {
-    return (
-      node.isTypeOnly ||
-      (node.exportClause !== undefined &&
-        ts.isNamedExports(node.exportClause) &&
-        node.exportClause.elements.length > 0 &&
-        node.exportClause.elements.every((element) => element.isTypeOnly))
-    );
-  }
-  const clause = node.importClause;
-  if (!clause) return false;
-  if (clause.isTypeOnly) return true;
-  return (
-    clause.name === undefined &&
-    clause.namedBindings !== undefined &&
-    ts.isNamedImports(clause.namedBindings) &&
-    clause.namedBindings.elements.length > 0 &&
-    clause.namedBindings.elements.every((element) => element.isTypeOnly)
   );
 }
 

@@ -1,0 +1,25 @@
+# 2026-09-27 — Certified benchmark CA needs exact-file access
+
+- **Status:** Resolved
+- **Task/context:** Recovering useful certified benchmark fixes from the dirty `p-work3` checkout while keeping authentication material private.
+- **Unexpected observation or failure:** P and Pi command construction set `NODE_EXTRA_CA_CERTS` when a local CA file existed, but the certified sandbox did not allow the child to read that file. Exact-path fixes then exposed three security gaps: inherited alternate CA paths, symlinked canonical CA files, and hard-linked canonical CA files could grant unintended credential bytes. Kilo retained inherited CA configuration instead of using the canonical file.
+- **Evidence:** On macOS, the focused CA-read regression failed before the initial fix and passed afterward. Independent review reproduced sandboxed reads of synthetic foreign and sibling credential files through environment and symlink/hardlink aliases. Hardlink and Kilo regressions both failed before the final fix.
+- **Approaches tried:**
+  - **Attempt:** Grant the containing `~/.p/agent` directory.
+    - **Outcome:** Rejected
+    - **Why:** It can also contain authentication material unrelated to the CA.
+  - **Attempt:** Add the command's `NODE_EXTRA_CA_CERTS` value directly to the exact-file allowlist.
+    - **Outcome:** Partial
+    - **Why:** It fixed a regular CA but trusted inherited paths and followed symlinks to unintended targets.
+- **Attempt:** Clear inherited CA paths in certified P/Pi commands; accept only the canonical regular non-symlink CA; revalidate any command-supplied CA before granting it.
+    - **Outcome:** Partial
+    - **Why:** A hard link to `auth.json` is a regular non-symlink file with the canonical path.
+  - **Attempt:** Require the canonical regular file to have one link and apply the same CA setup to certified Kilo commands, including model resolution.
+    - **Outcome:** Worked for the tested paths
+    - **Why:** The required file remains readable without granting alternate paths or linked credential content, and all three agents receive the same certified CA setting.
+- **Root cause:** TLS environment construction and sandbox filesystem policy were separate paths; the policy omitted a required file, then a naive path grant treated inherited environment values and filesystem aliases as trusted.
+- **Resolution:** The sandbox builder grants only the canonical single-link CA after regular-file validation. Certified P/Pi/Kilo commands drop inherited CA values before deriving their own; other certified commands fail closed on foreign, symlinked, hard-linked, missing, or non-file CA paths.
+- **Verification:** `agent-command-tls.test.ts` was red (1/2) before the first change and green afterward. `certified-ca-boundary.test.ts` was red (0/3) against the naive fix, then red (2/5) for hardlink and Kilo behavior before the final fix. Combined CA and command tests passed 16/16 on macOS: P/Pi read the synthetic CA but cannot read a sibling; foreign, symlinked, hard-linked, and directory paths are rejected; Kilo receives the canonical path. No live provider request was made.
+- **Prevention/follow-up:** Keep runtime file paths required through environment variables in sync with narrowly scoped sandbox grants; retain real macOS read/deny and path-origin regressions. Full certified model traffic remains a separate benchmark gate. Same-UID filesystem replacement between validation and process launch is a residual host race.
+- **Reusable learning:** When a sandboxed process needs a configured file, validate its origin, type, and link count before granting precisely that file; test inherited environment values and both symbolic and hard-link aliases alongside adjacent-file denial.
+- **References:** `benchmarks/src/workloads/agent-command.ts`, `benchmarks/test/workloads/agent-command-tls.test.ts`, `benchmarks/test/workloads/certified-ca-boundary.test.ts`, draft PR #138.
