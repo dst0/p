@@ -24,7 +24,7 @@ export function classifyProjectInstructionCompilerError(error: unknown): Project
   if (/compiler source (?:size )?limit/iu.test(message)) {
     return "project instruction compiler source size limit was exceeded";
   }
-  if (/provider|stopped with (?:aborted|error)/iu.test(message)) {
+  if (/provider|stopped with (?:aborted|error)|abort|deadline|timed out/iu.test(message)) {
     return "project instruction compiler provider call failed";
   }
   if (/body|classif|contract|JSON|source text|trigger|output validation/iu.test(message)) {

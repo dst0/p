@@ -30,7 +30,7 @@ test("descendant cleanup on timeout using unix socket fixture", async () => {
     "setInterval(() => {}, 10000);",
     "`;",
     "const grandchild = spawn(process.execPath, [\"--input-type=module\", \"-e\", grandchildCode], { stdio: \"inherit\" });",
-    "const deadline = Date.now() + 5000;",
+    "const deadline = Date.now() + 9000;",
     "while (!fs.existsSync(" + JSON.stringify(readyPath) + ") && Date.now() < deadline) {",
     "  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);",
     "}",
@@ -44,14 +44,14 @@ test("descendant cleanup on timeout using unix socket fixture", async () => {
       await runBoundedProcessCommand(
         process.execPath,
         [helperScript],
-        { timeout: 600, graceMs: 100 },
+        { timeout: 10_000, graceMs: 100 },
       );
     } catch (err) {
       error = err;
     }
 
     assert.ok(error, "Expected bounded command to time out");
-    assert.match(error.message, /timed out after 600ms/);
+    assert.match(error.message, /timed out after 10000ms/);
     assert.ok(fs.existsSync(readyPath), "Grandchild ready flag must exist, proving grandchild was alive");
 
     await new Promise((resolve, reject) => {

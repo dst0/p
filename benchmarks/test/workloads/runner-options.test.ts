@@ -258,7 +258,7 @@ test("preserves continuation, probe, model-resolution, and project-instruction c
   ]);
   const projectCommand = commandForAgent("p", projectOptions, task, configDir, workspace, true);
   assert.equal(projectCommand.args.includes("--no-context-files"), false);
-  assert.deepEqual(projectCommand.args.slice(-8), [
+  assert.deepEqual(projectCommand.args.slice(-10), [
     "--task-verification",
     "evidence",
     "--continue",
@@ -266,6 +266,8 @@ test("preserves continuation, probe, model-resolution, and project-instruction c
     projectOptions.projectInstructionProbe,
     "--project-instructions",
     "compiled",
+    "--project-instruction-startup-deadline",
+    "0",
     "fixture prompt",
   ]);
   assert.equal(projectCommand.env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT, receipt);

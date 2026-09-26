@@ -1,4 +1,5 @@
 import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
+import { MAX_PROJECT_INSTRUCTION_STARTUP_DEADLINE_SECONDS } from "../core/project-instructions/compiler-runner.ts";
 import type { ProjectInstructionDeliveryMode } from "../core/project-instructions/index.ts";
 import {
   isTaskVerificationSelection,
@@ -37,4 +38,14 @@ export function parsePositiveIntegerFlag(value: string): number | undefined {
   if (!/^[1-9]\d*$/.test(value)) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+export const DEFAULT_PROJECT_INSTRUCTION_STARTUP_DEADLINE_SECONDS = 12;
+
+export function parseNonNegativeIntegerFlag(value: string): number | undefined {
+  if (!/^(0|[1-9]\d*)$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed <= MAX_PROJECT_INSTRUCTION_STARTUP_DEADLINE_SECONDS
+    ? parsed
+    : undefined;
 }

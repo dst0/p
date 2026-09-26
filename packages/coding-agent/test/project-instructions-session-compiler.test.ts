@@ -80,6 +80,29 @@ afterEach(() => {
 });
 
 describe("default project instruction compiler lifecycle", () => {
+  it("does not start a provider call when auth resolves after the startup deadline", async () => {
+    const fixture = createFixture();
+    let releaseAuth!: (value: { ok: true; apiKey: string }) => void;
+    const auth = new Promise<{ ok: true; apiKey: string }>((resolve) => {
+      releaseAuth = resolve;
+    });
+    const controller = await createSessionProjectInstructionController({
+      cwd: fixture.root,
+      resourceLoader: fixture.resourceLoader,
+      modelRegistry: { getApiKeyAndHeaders: () => auth } as unknown as ModelRegistry,
+      settingsManager: {
+        getHttpIdleTimeoutMs: () => 60_000,
+        getEnableInstallTelemetry: () => false,
+      } as unknown as SettingsManager,
+      getModel: () => createModel("working"),
+      startupDeadlineSeconds: 0.01,
+    });
+    expect(controller.state.current?.manifest.mode).toBe("fallback");
+    releaseAuth({ ok: true, apiKey: "test-api-key" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(modelCompilerMocks.compile).not.toHaveBeenCalled();
+  });
+
   it("retains loader-supplied source identity if its backing file disappears before controller creation", async () => {
     const fixture = createFixture();
     const source = fixture.resourceLoader.getAgentsFiles().agentsFiles[0]!;

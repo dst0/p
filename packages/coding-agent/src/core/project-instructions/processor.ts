@@ -200,11 +200,15 @@ async function getCompilation(
       diagnostic: classifyProjectInstructionCompilerError(previousFailure.error),
     };
   }
-  const compilation = await runProjectInstructionCompiler(options.compiler, {
-    sources: options.contextFiles,
-    modules: cache.modules,
-    constraints: cache.constraints,
-  });
+  const compilation = await runProjectInstructionCompiler(
+    options.compiler,
+    {
+      sources: options.contextFiles,
+      modules: cache.modules,
+      constraints: cache.constraints,
+    },
+    { signal: options.signal, deadlineSeconds: options.deadlineSeconds },
+  );
   if (compilation.result) persistCompilation(cache, compilation.result);
   else if (compilation.status === "failed") {
     persistCompilationFailure(cache, {

@@ -60,6 +60,7 @@ ${chalk.bold("Options:")}
   --task-verification <mode>     Verification: auto (default: light, strict for code+tests), light, strict, off;
                                  evidence/audit force strict with that engine (audit is experimental)
   --project-instruction-compiler-model <provider/id>  Dedicated compiler model (default: task model)
+  --project-instruction-startup-deadline <sec>        Startup compile deadline in seconds (0 = full timeout, default: 12)
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)

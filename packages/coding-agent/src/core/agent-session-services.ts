@@ -72,6 +72,7 @@ export interface CreateAgentSessionFromServicesOptions {
   taskVerificationMode?: CreateAgentSessionOptions["taskVerificationMode"];
   projectInstructionMode?: CreateAgentSessionOptions["projectInstructionMode"];
   projectInstructionCompilerModel?: CreateAgentSessionOptions["projectInstructionCompilerModel"];
+  projectInstructionStartupDeadline?: CreateAgentSessionOptions["projectInstructionStartupDeadline"];
 }
 
 /**
@@ -221,5 +222,6 @@ export async function createAgentSessionFromServices(
     taskVerificationMode: options.taskVerificationMode,
     projectInstructionMode: options.projectInstructionMode,
     projectInstructionCompilerModel: options.projectInstructionCompilerModel,
+    projectInstructionStartupDeadline: options.projectInstructionStartupDeadline,
   });
 }
