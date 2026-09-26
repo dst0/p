@@ -39,12 +39,12 @@ import { installIndexingTray } from "./build-indexing-tray.js";
 import { computeIndexingRuntimeConfigFingerprint } from "../packages/coding-agent/dist/core/indexing-runtime-config.js";
 import { computeIndexingVersion } from "../packages/coding-agent/dist/core/indexing-version.js";
 import { getQdrantAsset, getQdrantExtractionArgs, QDRANT_VERSION } from "./indexing-qdrant-assets.js";
+import { runRealSemanticSearchSmoke } from "./indexing-semantic-smoke-runner.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
 const CODE_INDEX_DIR = path.join(ROOT, "packages", "code-index");
 const DAEMON = path.join(ROOT, "packages", "coding-agent", "dist", "indexing-service-daemon.js");
-const SMOKE_SCRIPT = path.join(SCRIPT_DIR, "smoke-code-index.js");
 const REQUIREMENTS = path.join(CODE_INDEX_DIR, "requirements.txt");
 const AGENT_DIR = process.env.P_CODING_AGENT_DIR ?? path.join(os.homedir(), ".p", "agent");
 const SERVICE_ROOT = path.join(AGENT_DIR, "indexing-service");
@@ -355,7 +355,7 @@ async function installDarwin(plist, environment, reuseApproved) {
   await stopStaleDaemons(knownDaemonPid);
   await stopStaleBackends();
   writeFileAtomic(plistPath, plist);
-  runRealSemanticSearchSmoke(environment);
+  await runRealSemanticSearchSmoke(environment);
   run("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
   run("launchctl", ["kickstart", "-k", `gui/${uid}/${SERVICE_LABEL}`]);
 }
@@ -391,7 +391,7 @@ async function installLinux(unit, environment, reuseApproved) {
   await stopStaleBackends();
   writeFileAtomic(unitPath, unit);
   run("systemctl", ["--user", "daemon-reload"]);
-  runRealSemanticSearchSmoke(environment);
+  await runRealSemanticSearchSmoke(environment);
   run("systemctl", ["--user", "enable", "--now", `${SERVICE_LABEL}.service`]);
   run("systemctl", ["--user", "is-active", "--quiet", `${SERVICE_LABEL}.service`]);
 }
@@ -445,11 +445,6 @@ async function stopValidatedProcess(pid, description, isExpectedProcess) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (isProcessRunning(pid)) throw new Error(`Timed out stopping ${description} ${pid}`);
-}
-
-function runRealSemanticSearchSmoke(environment) {
-  console.log("Running real semantic-search verification");
-  run(process.execPath, [SMOKE_SCRIPT], { env: { ...process.env, ...environment } });
 }
 
 function readStatusDaemonPid() {
