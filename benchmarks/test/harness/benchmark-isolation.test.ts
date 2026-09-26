@@ -12,9 +12,7 @@ import {
 
 test(
   "sandbox profile limits a child to its workspace and candidate runtime",
-  {
-    skip: !benchmarkSandboxExecutable(),
-  },
+  { skip: !benchmarkSandboxExecutable() },
   () => {
     const root = mkdtempSync(join(tmpdir(), "benchmark-isolation-proof-"));
     const workspace = join(root, "workspace");

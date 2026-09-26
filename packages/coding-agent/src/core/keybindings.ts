@@ -402,4 +402,4 @@ export class KeybindingsManager extends TuiKeybindingsManager {
   }
 }
 
-export type { Keybinding, KeybindingsConfig, KeyId };
+export type { Keybinding, KeyId, KeybindingsConfig };

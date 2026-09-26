@@ -21,9 +21,7 @@ import { runKiloStartupProbe } from "../../src/workloads/startup-probes.ts";
 
 test(
   "certified Kilo startup probes execute inside candidate containment",
-  {
-    skip: !benchmarkSandboxExecutable(),
-  },
+  { skip: !benchmarkSandboxExecutable() },
   async () => {
     const root = mkdtempSync(join(tmpdir(), "certified-startup-containment-"));
     try {
@@ -70,9 +68,7 @@ test(
 
 test(
   "a rejected Kilo startup command propagates unsafe state before runtime evidence traversal",
-  {
-    skip: !benchmarkSandboxExecutable(),
-  },
+  { skip: !benchmarkSandboxExecutable() },
   async () => {
     const root = mkdtempSync(join(tmpdir(), "unsafe-certified-startup-"));
     try {

@@ -67,9 +67,7 @@ function expectedRawStream(): string {
 
 test(
   "many individually bounded P metrics cross 16 MiB without retaining aggregate payload text",
-  {
-    timeout: 60_000,
-  },
+  { timeout: 60_000 },
   async () => {
     const root = mkdtempSync(join(tmpdir(), "p-benchmark-metric-aggregate-"));
     const finalPath = join(root, "turn.jsonl.br");

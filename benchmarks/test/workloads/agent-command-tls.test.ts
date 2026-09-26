@@ -34,9 +34,7 @@ test("keeps TLS certificate verification enabled for PI and P provider requests"
 
 test(
   "certified P and Pi can read only their extra CA file in the sandbox",
-  {
-    skip: !benchmarkSandboxExecutable(),
-  },
+  { skip: !benchmarkSandboxExecutable() },
   () => {
     const root = mkdtempSync(join(tmpdir(), "benchmark-certified-ca-"));
     const previousHome = process.env.HOME;

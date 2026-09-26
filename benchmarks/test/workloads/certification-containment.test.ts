@@ -14,9 +14,7 @@ import { createCandidateRuntimeSnapshot } from "../../src/harness/runtime-snapsh
 
 test(
   "containment rejects live repo, evaluator reads, outside writes, and runtime mutation",
-  {
-    skip: !benchmarkSandboxExecutable(),
-  },
+  { skip: !benchmarkSandboxExecutable() },
   () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "containment-proof-")));
     const liveRepo = join(root, "live-repo");
