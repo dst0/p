@@ -52,6 +52,7 @@
 - In a fresh worktree, first build workspace `dist` through `./reinstall.sh` before the full `./test.sh`; otherwise internal package imports can fail even when source tests are healthy. Verify shared CLI/daemon ownership before relinking.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
 - After restarting a live `p` run, rediscover and identity-bind its newest session JSONL before monitoring; never infer a stall from the previous process's log.
+- Installer smoke checks must bound the entire child process group and require child exit; a printed success line does not prove cleanup completed.
 
 ## Test Quality & Adversarial Review
 
@@ -93,6 +94,7 @@
 - `computeIndexingVersion()` in `packages/coding-agent/src/core/indexing-service.ts` calculates a deterministic SHA-256 hash of all indexing runtime files (daemon core `indexing*.ts`/`js` modules, `code-index` build/Python/config files, installer scripts); `./reinstall.sh` uses it to skip unnecessary daemon restarts and vector-store rebuilds safely.
 - Package version bumps (`scripts/version-bump.js`) must NEVER modify source files in `packages/code-index/src/` or invalidate `computeIndexingVersion()`. Release version bumps only update `package.json` and `package-lock.json`.
 - When adding or modifying indexing files, run `node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts` from `packages/coding-agent` to verify test coverage. Any new indexing daemon module matching `packages/coding-agent/src/core/indexing*` is automatically tracked by `computeIndexingVersion()`.
+- New indexing installer scripts under `scripts/` must also be added to the explicit installer input list in `indexing-version.ts` and its hash regression test.
 
 ## Dependency and Install Security
 

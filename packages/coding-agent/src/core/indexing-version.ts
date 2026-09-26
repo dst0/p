@@ -53,6 +53,7 @@ function collectIndexingFiles(projectRoot: string): string[] {
     "indexing-service-health.js",
     "indexing-service-node-executable.js",
     "indexing-service-search-path.js",
+    "indexing-semantic-smoke-runner.js",
     "install-apple-coreai.js",
     "install-amd-ryzen-ai.js",
     "install-amd-xdna-driver.js",
