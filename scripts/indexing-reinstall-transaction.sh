@@ -4,7 +4,8 @@ INDEXING_REINSTALL_TRANSACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
 INDEXING_REINSTALL_LOCK_ACTIVE=false
 
 begin_indexing_reinstall_transaction() {
-    INDEXING_REINSTALL_AGENT_DIR="$1"
+    INDEXING_REINSTALL_AGENT_DIR="$(node -p 'require("node:path").resolve(process.argv[1])' "$1")"
+    export P_CODING_AGENT_DIR="$INDEXING_REINSTALL_AGENT_DIR"
     if [[ -n "${P_INDEXING_REINSTALL_PARENT_RUN_ID:-}" || -n "${P_INDEXING_REINSTALL_PARENT_PID:-}" ]]; then
         if [[ -z "${P_INDEXING_REINSTALL_PARENT_RUN_ID:-}" || "${P_INDEXING_REINSTALL_PARENT_PID:-}" != "$PPID" ]]; then
             echo "Indexing reinstall parent identity does not match this child process." >&2

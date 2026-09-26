@@ -60,6 +60,7 @@ if [[ "$SCRIPT_DIR" != "$CENTRAL_VERSIONS_ROOT/"* ]]; then
     export P_CENTRAL_INSTALL_PARENT_RUN_ID="$CENTRAL_INSTALL_LOCK_RUN_ID"
     export P_CENTRAL_INSTALL_PARENT_PID="$$"
     begin_indexing_reinstall_transaction "$AGENT_DIR"
+    AGENT_DIR="$INDEXING_REINSTALL_AGENT_DIR"
     export P_INDEXING_REINSTALL_PARENT_RUN_ID="$INDEXING_REINSTALL_RUN_ID"
     export P_INDEXING_REINSTALL_PARENT_PID="$$"
     STAGED_RUNTIME=$(node "$SCRIPT_DIR/scripts/central-install-snapshot.js" stage "$SCRIPT_DIR")
@@ -81,6 +82,7 @@ echo "Source HEAD: $(<"$SCRIPT_DIR/.p-source-sha")"
 node "$SCRIPT_DIR/scripts/central-install-snapshot.js" prepare
 begin_central_install_transaction "$CENTRAL_INSTALL_ROOT"
 begin_indexing_reinstall_transaction "$AGENT_DIR"
+AGENT_DIR="$INDEXING_REINSTALL_AGENT_DIR"
 node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"

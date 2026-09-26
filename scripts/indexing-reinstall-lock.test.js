@@ -86,6 +86,36 @@ test("a child may share only its live parent's exact reinstall lock", () => {
   }
 });
 
+test("a relative agent directory keeps the same lock across staged runtime cwd changes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-relative-indexing-lock-"));
+  const source = path.join(root, "source");
+  const candidate = path.join(root, "candidate");
+  const transaction = path.join(import.meta.dirname, "indexing-reinstall-transaction.sh");
+  fs.mkdirSync(source);
+  fs.mkdirSync(candidate);
+  try {
+    const result = spawnSync("bash", ["-c", [
+      "set -euo pipefail",
+      'cd "$2"',
+      'source "$1"',
+      'begin_indexing_reinstall_transaction "$P_CODING_AGENT_DIR"',
+      "trap cleanup_indexing_reinstall_transaction EXIT",
+      'export P_INDEXING_REINSTALL_PARENT_RUN_ID="$INDEXING_REINSTALL_RUN_ID"',
+      'export P_INDEXING_REINSTALL_PARENT_PID="$$"',
+      "bash -c 'set -euo pipefail; cd \"$1\"; source \"$2\"; begin_indexing_reinstall_transaction \"$P_CODING_AGENT_DIR\"; printf \"%s\\n\" \"$INDEXING_REINSTALL_AGENT_DIR\"' bash \"$3\" \"$1\"",
+    ].join("\n"), "bash", transaction, source, candidate], {
+      encoding: "utf8",
+      env: { ...process.env, P_CODING_AGENT_DIR: "relative-agent" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), path.join(fs.realpathSync(source), "relative-agent"));
+    assert.equal(fs.existsSync(path.join(source, "relative-agent", "indexing-reinstall.lock")), false);
+    assert.equal(fs.existsSync(path.join(candidate, "relative-agent", "indexing-reinstall.lock")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 async function waitForChildClose(closePromise, timeoutMs = 30_000) {
   let timeout;
   try {

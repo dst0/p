@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep relative agent-directory overrides bound to one absolute path while reinstalling from the centralized runtime."
+}
