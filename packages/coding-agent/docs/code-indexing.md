@@ -14,7 +14,7 @@ For a source checkout, run:
 ./reinstall.sh
 ```
 
-On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed native Qdrant binary, creates a Python virtual environment with pinned embedding dependencies, and finishes with a real end-to-end semantic-search smoke test against a temporary repository. Docker is not used.
+On supported macOS and Linux systems, this requires a clean committed Git checkout, copies its exact HEAD into a fresh `~/.p/install/versions/` directory, and builds and relinks p from that centralized copy before installing the per-user `com.dst.p.code-index` service. `~/.p/install/current` is updated only after the service and a real semantic-search smoke test succeed; `previous` retains the prior successful runtime. Reinstalling from an already installed runtime relinks and checks it without rebuilding its files. If a new install fails, the source wrapper attempts to restore `current`; a first install has no previous centralized runtime to restore. A per-home lock in `~/.p/install/` serializes global CLI and service changes across custom agent directories, while each agent directory retains its indexing reinstall lock. To roll back both the CLI and service, run `bash ~/.p/install/previous/reinstall.sh` and let its checks complete; changing only the `current` symlink is not a rollback because the global npm link and service point directly to a version directory. Both the global CLI and service execute from the installed copy, not the source worktree. The installer supports arm64 and x64, downloads a checksummed native Qdrant binary, creates a Python virtual environment with pinned embedding dependencies, and finishes with a real end-to-end semantic-search smoke test against a temporary repository. Docker is not used.
 
 On Linux x64, the installer selects a PyTorch build from the available compute device: ROCm 7.2 when `/dev/kfd` exposes AMD compute, CUDA 12.6 when an NVIDIA compute device is present, and CPU-only otherwise. The selected flavor is part of the environment marker, so rerunning `./reinstall.sh` replaces an old CPU-only environment after ROCm or CUDA becomes available. Set `torchBackend` to `cpu`, `rocm`, or `cuda` in `~/.p/agent/code-rag.json` to override automatic selection.
 
@@ -199,7 +199,7 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 | `indexing-service/openvino-cache/` | Compiled Intel OpenVINO model cache |
 | `indexing-service/logs/` | Service stdout and stderr logs |
 
-Set `P_CODING_AGENT_DIR` to move the entire agent directory. The service installer records the selected absolute paths when it is installed, so rerun `./reinstall.sh` after changing that location or the checkout path.
+Set `P_CODING_AGENT_DIR` to move the entire agent directory. The service installer records the selected absolute paths when it is installed, so rerun `./reinstall.sh` after changing that location. Moving or deleting the source checkout does not move the installed runtime.
 
 ## Configuration
 
@@ -277,11 +277,13 @@ Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is e
 
 Start with `/index`. If the background service is not running or reports an error:
 
-1. rerun `./reinstall.sh` from the current checkout;
+1. rerun `./reinstall.sh` from a clean committed checkout, or from `~/.p/install/current` to reinstall that exact version;
 2. inspect `~/.p/agent/indexing-service/logs/service-error.log`;
 3. confirm the configured Python version is supported;
 4. check available disk space for the model cache and Qdrant database;
 5. use exact search and file reads while the index is initializing or unavailable.
+
+If a first centralized reinstall fails after relinking, check where `p` and the service actually point before retrying; `current` only records successful installs and may not exist yet. If a later candidate fails and automatic restoration also fails, run `bash ~/.p/install/current/reinstall.sh` to restore the last verified runtime, then inspect the CLI and service paths. Do not move `current` by hand.
 
 The embedding endpoint exposes its decision directly:
 
@@ -293,7 +295,7 @@ Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProv
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 
-Install and reinstall serialize configuration and service changes using a private `~/.p/agent/indexing-reinstall.lock`. They preserve an explicit `qdrantDataDirectory`. An unchanged service is reused only when a one-shot decision still matches the reinstall owner, indexing runtime hash, and effective configuration fingerprint; a changed or missing decision fails closed instead of silently reusing stale state.
+Install and reinstall serialize staging, configuration, service changes, and any failed-candidate restoration using a private `~/.p/agent/indexing-reinstall.lock`. They preserve an explicit `qdrantDataDirectory`. An unchanged service is reused only when a one-shot decision still matches the reinstall owner, indexing runtime hash, and effective configuration fingerprint; a changed or missing decision fails closed instead of silently reusing stale state.
 
 Normal exit releases the lock. If an interrupted process leaves a stale lock, the next attempt reports its exact path and recorded owner. Confirm that no install or reinstall is running and that the recorded owner is gone before removing only that lock file, then rerun `./reinstall.sh`. Do not clear a live owner's lock or reuse decision; PID reuse can conservatively require additional process-identity checks.
 

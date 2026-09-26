@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
   acquireIndexingReinstallLock,
+  assertIndexingReinstallLockOwner,
   releaseIndexingReinstallLock,
 } from "./indexing-reinstall-lock.js";
 
@@ -54,6 +55,34 @@ test("a dead lock owner fails closed with an exact manual recovery target", asyn
     } finally {
       fs.rmSync(agentDirectory, { recursive: true, force: true });
     }
+  }
+});
+
+test("a child may share only its live parent's exact reinstall lock", () => {
+  const agentDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-inherited-lock-"));
+  const transaction = path.join(import.meta.dirname, "indexing-reinstall-transaction.sh");
+  const child = (id, pid) => spawnSync(
+    "bash",
+    ["-c", 'set -e; source "$1"; begin_indexing_reinstall_transaction "$2"; printf "%s:%s\\n" "$INDEXING_REINSTALL_RUN_ID" "$INDEXING_REINSTALL_LOCK_ACTIVE"', "bash", transaction, agentDirectory],
+    {
+      encoding: "utf8",
+      env: { ...process.env, P_INDEXING_REINSTALL_PARENT_RUN_ID: id, P_INDEXING_REINSTALL_PARENT_PID: String(pid) },
+    },
+  );
+  try {
+    acquireIndexingReinstallLock(agentDirectory, runId, process.pid);
+    assert.equal(assertIndexingReinstallLockOwner(agentDirectory, runId, process.pid), true);
+    const permitted = child(runId, process.pid);
+    assert.equal(permitted.status, 0, permitted.stderr);
+    assert.equal(permitted.stdout.trim(), `${runId}:false`);
+    assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-reinstall.lock")), true);
+    assert.notEqual(child("wrong-run", process.pid).status, 0);
+    assert.notEqual(child(runId, process.pid + 1).status, 0);
+    assert.equal(releaseIndexingReinstallLock(agentDirectory, runId), true);
+    assert.notEqual(child(runId, process.pid).status, 0);
+  } finally {
+    releaseIndexingReinstallLock(agentDirectory, runId);
+    fs.rmSync(agentDirectory, { recursive: true, force: true });
   }
 });
 

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { computeIndexingServiceReadyTimeoutMs } from "./indexing-service-health.js";
+import { assertIndexingServiceRuntime, computeIndexingServiceReadyTimeoutMs } from "./indexing-service-health.js";
 
 test("installed service readiness covers sequential configured backend startup budgets", () => {
   assert.equal(
@@ -33,4 +36,27 @@ test("installed service readiness uses safe defaults for absent or invalid budge
     }),
     660_000,
   );
+});
+
+test("installed service must report the exact committed runtime before activation", (context) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "p-service-runtime-")));
+  const agentDir = path.join(root, "agent");
+  const installed = path.join(root, "installed");
+  const oldRuntime = path.join(root, "old-runtime");
+  fs.mkdirSync(agentDir);
+  fs.mkdirSync(installed);
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const expectedDaemon = path.join(installed, "packages", "coding-agent", "dist", "indexing-service-daemon.js");
+  const statusPath = path.join(agentDir, "indexing-service-status.json");
+  const writeStatus = (runtimeRoot, daemonPath) => fs.writeFileSync(statusPath, JSON.stringify({
+    running: true,
+    runtimeProvenance: { runtimeRoot, daemonPath },
+  }));
+
+  writeStatus(oldRuntime, path.join(oldRuntime, "packages", "coding-agent", "dist", "indexing-service-daemon.js"));
+  assert.throws(() => assertIndexingServiceRuntime(agentDir, installed), /runtime/i);
+  writeStatus(installed, path.join(oldRuntime, "packages", "coding-agent", "dist", "indexing-service-daemon.js"));
+  assert.throws(() => assertIndexingServiceRuntime(agentDir, installed), /runtime/i);
+  writeStatus(installed, expectedDaemon);
+  assert.doesNotThrow(() => assertIndexingServiceRuntime(agentDir, installed));
 });

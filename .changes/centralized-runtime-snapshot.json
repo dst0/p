@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Install the global p CLI and indexing daemon from a committed runtime under ~/.p/install instead of a mutable development checkout."
+}

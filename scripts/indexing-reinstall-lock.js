@@ -52,6 +52,16 @@ export function releaseIndexingReinstallLock(agentDir, runId) {
   }
 }
 
+export function assertIndexingReinstallLockOwner(agentDir, runId, ownerPid) {
+  validateRunId(runId);
+  if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error("Invalid indexing reinstall owner pid");
+  const owner = readLockOwner(path.join(agentDir, REINSTALL_LOCK_FILE));
+  if (!owner || owner.runId !== runId || owner.ownerPid !== ownerPid || !isProcessRunning(ownerPid)) {
+    throw new Error("Indexing reinstall parent does not own the active lock");
+  }
+  return true;
+}
+
 function readLockOwner(lockPath) {
   try {
     const stat = fs.lstatSync(lockPath);
@@ -98,7 +108,11 @@ async function runCli() {
     if (!releaseIndexingReinstallLock(agentDir, runId)) process.exitCode = 1;
     return;
   }
-  throw new Error("Expected --acquire or --release");
+  if (command === "--assert-owner") {
+    assertIndexingReinstallLockOwner(agentDir, runId, Number(ownerPid));
+    return;
+  }
+  throw new Error("Expected --acquire, --release, or --assert-owner");
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;

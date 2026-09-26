@@ -59,7 +59,7 @@ describe("indexing reinstall scripts", () => {
     expect(lockBegin).toBeGreaterThanOrEqual(0);
     expect(lockBegin).toBeLessThan(configMigration);
     expect(lockActive).toBeGreaterThanOrEqual(0);
-    expect(lockActive).toBeLessThan(lockAcquire);
+    expect(lockActive).toBeGreaterThan(lockAcquire);
     expect(transaction).toContain('indexing-service-reuse.js" --clear-reuse');
     expect(transaction).toContain('indexing-reinstall-lock.js" --release');
     expect(reinstall).not.toContain('touch "$INDEXING_VERSION_UNCHANGED_FLAG"');
