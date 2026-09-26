@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Exclude benchmark runner and evaluator source from certified candidate runtime snapshots and reject probe imports that cross into evaluator code."
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Allow certified P, Pi, and Kilo subprocesses to read only a canonical single-link CA file, rejecting inherited and linked paths that could expose authentication data."
+}
