@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Add regression coverage for synchronous compiler cancellation during listener registration without changing user-facing behavior.",
+  "reason": "This commit changes only tests and agent guidance; it does not change the shipped coding-agent runtime."
+}

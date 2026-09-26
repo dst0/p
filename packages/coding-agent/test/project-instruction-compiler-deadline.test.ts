@@ -18,6 +18,29 @@ describe("project instruction compiler deadline lifecycle", () => {
     expect(compiler).not.toHaveBeenCalled();
   });
 
+  it("observes cancellation raised synchronously during compiler setup before the abort listener is attached", async () => {
+    const parent = new AbortController();
+    const compiler = vi.fn<ProjectInstructionCompiler>(async () => {
+      parent.abort(new Error("Operation aborted during compiler setup"));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return {
+        body: "No source constraints apply to every task.",
+        triggers: {},
+        classifications: { modules: {}, constraints: {} },
+        alwaysOn: {},
+      };
+    });
+    const result = await runProjectInstructionCompiler(
+      compiler,
+      { sources: [{ path: "AGENTS.md", content: "Always inspect the source." }], modules: [], constraints: [] },
+      { signal: parent.signal },
+    );
+    expect(compiler).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("failed");
+    expect(result.diagnostic).toBe("project instruction compiler provider call failed");
+    expect(result.result).toBeUndefined();
+  });
+
   it("removes parent and effective abort listeners after a successful compilation", async () => {
     const parent = new AbortController();
     const parentAdd = vi.spyOn(parent.signal, "addEventListener");
