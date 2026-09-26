@@ -38,6 +38,8 @@ function collectIndexingFiles(projectRoot: string): string[] {
     "apple-coreai-generation-path.js",
     "bounded-process-command.js",
     "build-indexing-tray.js",
+    "central-install-snapshot.js",
+    "central-install-transaction.sh",
     "compute-indexing-version.js",
     "compute-indexing-runtime-fingerprint.js",
     "indexing-device-detection.sh",

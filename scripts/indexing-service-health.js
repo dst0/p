@@ -53,6 +53,19 @@ export async function waitForIndexingServiceReady(agentDir, timeoutMs) {
   throw new Error("Timed out waiting for the installed indexing daemon and its configured embedding backend");
 }
 
+export function assertIndexingServiceRuntime(agentDir, expectedRoot) {
+  const runtimeRoot = fs.realpathSync(expectedRoot);
+  const expectedDaemon = path.join(runtimeRoot, "packages", "coding-agent", "dist", "indexing-service-daemon.js");
+  const status = readJson(path.join(agentDir, "indexing-service-status.json"));
+  if (
+    status?.running !== true ||
+    status.runtimeProvenance?.runtimeRoot !== runtimeRoot ||
+    status.runtimeProvenance?.daemonPath !== expectedDaemon
+  ) {
+    throw new Error(`Installed indexing daemon did not report the expected runtime: ${runtimeRoot}`);
+  }
+}
+
 export async function readEmbeddingHealth() {
   try {
     const response = await fetch("http://127.0.0.1:18742/health", { signal: AbortSignal.timeout(2_000) });
@@ -85,4 +98,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const agentDir = process.argv[2];
   if (!agentDir) throw new Error("Usage: indexing-service-health.js <agent-directory>");
   await waitForIndexingServiceReady(agentDir);
+  if (process.argv[3]) assertIndexingServiceRuntime(agentDir, process.argv[3]);
 }

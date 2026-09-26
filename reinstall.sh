@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 cd "$SCRIPT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-reinstall-transaction.sh"
 source "$SCRIPT_DIR/scripts/npm-link-discovery.sh"
+source "$SCRIPT_DIR/scripts/central-install-transaction.sh"
 
 INDEXING_REINSTALL_MARKER_ACTIVE=false
-cleanup_indexing_reinstall_marker() {
-    if [[ "$INDEXING_REINSTALL_MARKER_ACTIVE" == true ]]; then
-        node scripts/prepare-indexing-service-reinstall.js --clear >/dev/null 2>&1 || true
-    fi
-    cleanup_indexing_reinstall_transaction
-}
-trap cleanup_indexing_reinstall_marker EXIT
+trap finish_reinstall_transaction EXIT
 
 # ---------------------------------------------------------------------------
 # Flag parsing
@@ -48,8 +43,46 @@ done
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 assert_no_local_checkout_p_alias_shadow
+CENTRAL_INSTALL_ROOT="$HOME/.p/install"
+CENTRAL_VERSIONS_ROOT="$CENTRAL_INSTALL_ROOT/versions"
+if [[ -d "$CENTRAL_VERSIONS_ROOT" ]]; then
+    CENTRAL_VERSIONS_ROOT="$(cd "$CENTRAL_VERSIONS_ROOT" && pwd -P)"
+fi
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
+if [[ "$SCRIPT_DIR" != "$CENTRAL_VERSIONS_ROOT/"* ]]; then
+    unset P_CENTRAL_INSTALL_PARENT_RUN_ID P_CENTRAL_INSTALL_PARENT_PID
+    unset P_INDEXING_REINSTALL_PARENT_RUN_ID P_INDEXING_REINSTALL_PARENT_PID
+    echo "Source checkout: $SCRIPT_DIR"
+    echo "Source branch: $(git -C "$SCRIPT_DIR" branch --show-current)"
+    echo "Source HEAD: $(git -C "$SCRIPT_DIR" rev-parse HEAD)"
+    node "$SCRIPT_DIR/scripts/central-install-snapshot.js" prepare
+    begin_central_install_transaction "$CENTRAL_INSTALL_ROOT"
+    export P_CENTRAL_INSTALL_PARENT_RUN_ID="$CENTRAL_INSTALL_LOCK_RUN_ID"
+    export P_CENTRAL_INSTALL_PARENT_PID="$$"
+    begin_indexing_reinstall_transaction "$AGENT_DIR"
+    AGENT_DIR="$INDEXING_REINSTALL_AGENT_DIR"
+    export P_INDEXING_REINSTALL_PARENT_RUN_ID="$INDEXING_REINSTALL_RUN_ID"
+    export P_INDEXING_REINSTALL_PARENT_PID="$$"
+    STAGED_RUNTIME=$(node "$SCRIPT_DIR/scripts/central-install-snapshot.js" stage "$SCRIPT_DIR")
+    echo "Installing from centralized runtime: $STAGED_RUNTIME"
+    PREVIOUS_RUNTIME=""
+    if [[ -L "$HOME/.p/install/current" ]]; then
+        PREVIOUS_RUNTIME="$(realpath "$HOME/.p/install/current")"
+    fi
+    run_centralized_install_candidate "$STAGED_RUNTIME" "$PREVIOUS_RUNTIME" "$@"
+    exit $?
+fi
+if [[ ! -f "$SCRIPT_DIR/.p-source-sha" ]]; then
+    echo "Centralized runtime is missing its source marker: $SCRIPT_DIR" >&2
+    exit 1
+fi
+echo "Installed runtime: $SCRIPT_DIR"
+echo "Source branch: committed snapshot (no Git worktree)"
+echo "Source HEAD: $(<"$SCRIPT_DIR/.p-source-sha")"
+node "$SCRIPT_DIR/scripts/central-install-snapshot.js" prepare
+begin_central_install_transaction "$CENTRAL_INSTALL_ROOT"
 begin_indexing_reinstall_transaction "$AGENT_DIR"
+AGENT_DIR="$INDEXING_REINSTALL_AGENT_DIR"
 node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
@@ -60,13 +93,22 @@ initialize_indexing_tray_selection "$SELECT_INDEXING"
 # ---------------------------------------------------------------------------
 # Main reinstall flow
 # ---------------------------------------------------------------------------
-echo "=== Using current checkout (no git pull) ==="
+echo "=== Using centralized runtime: $SCRIPT_DIR ==="
 
-echo "=== Reinstalling Monorepo Dependencies ==="
-npm install --ignore-scripts
+if [[ ! -f "$SCRIPT_DIR/.p-runtime-built" ]]; then
+    if [[ -L "$HOME/.p/install/current" && "$(realpath "$HOME/.p/install/current")" == "$SCRIPT_DIR" ]]; then
+        echo "Refusing to rebuild the active centralized runtime in place." >&2
+        exit 1
+    fi
+    echo "=== Installing Monorepo Dependencies in a new runtime ==="
+    npm install --ignore-scripts
 
-echo "=== Rebuilding Workspace Packages ==="
-npm run build
+    echo "=== Building Workspace Packages in a new runtime ==="
+    npm run build
+    node scripts/central-install-snapshot.js mark-built "$SCRIPT_DIR"
+else
+    echo "=== Reusing the already-built installed runtime ==="
+fi
 
 VERSION=$("$SCRIPT_DIR/packages/coding-agent/dist/cli.js" --version)
 
@@ -96,11 +138,20 @@ if [[ -z "$INSTALLED_P" ]]; then
     exit 1
 fi
 INSTALLED_VERSION=$("$INSTALLED_P" --version)
+EXPECTED_P_ENTRYPOINT="$SCRIPT_DIR/packages/coding-agent/dist/cli.js"
+if [[ "$(realpath "$INSTALLED_P")" != "$EXPECTED_P_ENTRYPOINT" ]]; then
+    echo "p does not resolve to the candidate runtime: $INSTALLED_P" >&2
+    exit 1
+fi
 if [[ "$INSTALLED_VERSION" != "$VERSION" ]]; then
     echo "Expected p $VERSION, but $INSTALLED_P reports $INSTALLED_VERSION." >&2
     exit 1
 fi
 for P_COMMAND in "${P_COMMANDS[@]+"${P_COMMANDS[@]}"}"; do
+    if [[ "$(realpath "$P_COMMAND")" != "$EXPECTED_P_ENTRYPOINT" ]]; then
+        echo "p does not resolve to the candidate runtime: $P_COMMAND" >&2
+        exit 1
+    fi
     P_COMMAND_VERSION=$("$P_COMMAND" --version)
     if [[ "$P_COMMAND_VERSION" != "$VERSION" ]]; then
         echo "Expected p $VERSION, but $P_COMMAND reports $P_COMMAND_VERSION." >&2
@@ -157,6 +208,7 @@ P_INDEXING_REINSTALL_EXPECTED_REUSE="$INDEXING_REUSE_DECISION" \
     node scripts/install-indexing-service.js
 node scripts/prepare-indexing-service-reinstall.js --clear
 INDEXING_REINSTALL_MARKER_ACTIVE=false
-node scripts/indexing-service-health.js "$AGENT_DIR"
+node scripts/indexing-service-health.js "$AGENT_DIR" "$SCRIPT_DIR"
+node scripts/central-install-snapshot.js activate "$SCRIPT_DIR"
 
 echo "Done. Version $VERSION installed."

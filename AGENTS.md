@@ -49,7 +49,7 @@
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - Do not run `npm run test:unit` inside a wrapper with a fixed deadline shorter than the suite. `test.sh` temporarily moves `~/.p/agent/auth.json`; after any interrupted run, verify the primary and `.bak` paths and restore the intact mode-`0600` backup only when the primary is absent.
 - Run `./test.sh` directly with output redirected to a temporary active log; do not route it through lean-ctx's bounded CLI wrapper. Compress the closed log with Brotli Q6 after the process exits.
-- In a fresh worktree, first build workspace `dist` through `./reinstall.sh` before the full `./test.sh`; otherwise internal package imports can fail even when source tests are healthy. Verify shared CLI/daemon ownership before relinking.
+- In a fresh worktree, `./reinstall.sh` builds `dist` only in the installed copy, not in the source checkout. If a local build was requested, create the test checkout's `dist` before the full `./test.sh`; otherwise internal package imports can fail even when source tests are healthy. Commit checked source before `./reinstall.sh`, and verify shared CLI/daemon ownership before relinking.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
 - After restarting a live `p` run, rediscover and identity-bind its newest session JSONL before monitoring; never infer a stall from the previous process's log.
 - Installer smoke checks must bound the entire child process group and require child exit; a printed success line does not prove cleanup completed.
@@ -83,6 +83,7 @@
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
 - `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step:
+  - Run it from a clean committed source checkout. It stages that exact commit under `~/.p/install/versions/` and executes the actual install there; never globally link `p` or launch its daemon from a mutable development checkout. A per-home install lock serializes global CLI/service changes even with different `P_CODING_AGENT_DIR` values. Keep `~/.p/agent` and Qdrant data separate from installed code.
   1. Hydrates monorepo dependencies (`npm install --ignore-scripts`) and builds all packages (`npm run build`).
   2. Relinks `p` CLI across all global npm prefix locations on `PATH` and verifies version match & compaction settings.
   3. Computes the indexing runtime version hash (`NEW_INDEXING_VERSION`) and compares it against the running daemon's `OLD_INDEXING_VERSION` in `~/.p/agent/indexing-service-status.json`.

@@ -45,7 +45,7 @@ For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst
 
 ## Local code indexing
 
-Source checkouts can install p's opt-in semantic-indexing service on macOS or Linux with `./reinstall.sh`. Reinstall replaces stale service processes and verifies a real semantic retrieval before succeeding. On first interactive use in a repository, p asks whether to index it; enabled repositories are refreshed in the background as files change. Use `/index` to inspect status, `/index up` to move the active repository to the front of the daemon queue, and `/index enable` or `/index disable` to change the saved decision.
+Clean, committed source checkouts can install p's opt-in semantic-indexing service on macOS or Linux with `./reinstall.sh`. Each source reinstall copies that exact commit into a new `~/.p/install/versions/` directory, then builds, relinks, and starts the service from the centralized copy. The global CLI and daemon no longer execute from a development checkout. User settings and Qdrant data remain under `~/.p/agent/` or their configured local data path. Reinstall replaces stale service processes and verifies a real semantic retrieval before succeeding. On first interactive use in a repository, p asks whether to index it; enabled repositories are refreshed in the background as files change. Use `/index` to inspect status, `/index up` to move the active repository to the front of the daemon queue, and `/index enable` or `/index disable` to change the saved decision.
 
 See [Architecture](packages/coding-agent/docs/architecture.md) for an overview of the p system design.
 See [Code indexing](packages/coding-agent/docs/code-indexing.md) for installation, privacy, configuration, service paths, and troubleshooting.
@@ -70,7 +70,7 @@ On a fresh Ubuntu or macOS system, run:
 ./install.sh
 ```
 
-This detects your OS, installs any missing dependencies (Node.js >= 22.19.0, Python 3.12+, curl, git, build tools), and then builds p locally. On macOS it uses Homebrew (installs it automatically if absent).
+This detects your OS, installs any missing dependencies (Node.js >= 22.19.0, Python 3.12+, curl, git, build tools), and then installs p from a clean committed checkout into `~/.p/install`. On macOS it uses Homebrew (installs it automatically if absent). To install local changes, commit them first; ignored build files are not copied into the runtime.
 
 After installation verify with:
 

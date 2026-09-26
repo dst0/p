@@ -31,6 +31,8 @@ function populateMockFiles(root: string): void {
     ["packages/coding-agent/dist/core/indexed-repos.js", "export const indexedRepos = true;\n"],
     ["scripts/install-indexing-service.js", "console.log('install');\n"],
     ["scripts/indexing-semantic-smoke-runner.js", "export const bounded = true;\n"],
+    ["scripts/central-install-snapshot.js", "export const snapshot = true;\n"],
+    ["scripts/central-install-transaction.sh", "run_transaction() { :; }\n"],
     ["scripts/indexing-qdrant-assets.js", "export const qdrant = true;\n"],
     ["scripts/indexing-reinstall-lock.js", "export const lock = true;\n"],
     ["scripts/indexing-reinstall-transaction.sh", "begin_transaction() { :; }\n"],
@@ -89,6 +91,8 @@ describe("computeIndexingVersion", () => {
     "scripts/indexing-reinstall-transaction.sh",
     "scripts/install-indexing-service.js",
     "scripts/indexing-semantic-smoke-runner.js",
+    "scripts/central-install-snapshot.js",
+    "scripts/central-install-transaction.sh",
     "scripts/indexing-device-selection.sh",
   ])("changes the hash when runtime input %s changes", (relativePath) => {
     const root = createMockProjectRoot();
