@@ -207,6 +207,7 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
       taskVerificationMode: sessionOptions.taskVerificationMode,
       projectInstructionMode: sessionOptions.projectInstructionMode,
       projectInstructionCompilerModel: sessionOptions.projectInstructionCompilerModel,
+      projectInstructionStartupDeadline: sessionOptions.projectInstructionStartupDeadline,
     });
     const cliThinkingOverride = options.parsed.thinking !== undefined || cliThinkingFromModel;
     if (created.session.model && cliThinkingOverride) {

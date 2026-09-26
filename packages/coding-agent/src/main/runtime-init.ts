@@ -1,5 +1,6 @@
 import { modelsAreEqual } from "@dst0/p-ai";
 import type { Args } from "../cli/args.ts";
+import { DEFAULT_PROJECT_INSTRUCTION_STARTUP_DEADLINE_SECONDS } from "../cli/argument-values.ts";
 import { showStartupSelector } from "../cli/startup-ui.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../core/agent-session-services.ts";
 import type { ModelRegistry } from "../core/model-registry.ts";
@@ -119,6 +120,8 @@ export function buildSessionOptions(
   }
   options.projectInstructionMode = parsed.noContextFiles ? "off" : parsed.projectInstructionMode;
   options.projectInstructionCompilerModel = parsed.projectInstructionCompilerModel;
+  options.projectInstructionStartupDeadline =
+    parsed.projectInstructionStartupDeadline ?? DEFAULT_PROJECT_INSTRUCTION_STARTUP_DEADLINE_SECONDS;
 
   return { options, cliThinkingFromModel, diagnostics };
 }

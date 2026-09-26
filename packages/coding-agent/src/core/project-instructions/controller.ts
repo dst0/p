@@ -37,6 +37,8 @@ export function createProjectInstructionController(
         compiler: options.compiler,
         compilerIdentity: options.getCompilerIdentity?.(),
         compilerFailureBackoffMs: refreshOptions?.retryFailedCompilation ? 0 : options.compilerFailureBackoffMs,
+        deadlineSeconds: refreshOptions?.deadlineSeconds,
+        signal: refreshOptions?.signal,
       });
       state.current = prepared;
       return prepared;

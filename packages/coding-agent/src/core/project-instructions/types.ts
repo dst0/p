@@ -141,8 +141,13 @@ export interface ProjectInstructionCompilerUsage {
   total: number;
 }
 
+export interface ProjectInstructionCompilerOptions {
+  signal?: AbortSignal;
+}
+
 export type ProjectInstructionCompiler = (
   request: ProjectInstructionCompilerRequest,
+  options?: ProjectInstructionCompilerOptions,
 ) => Promise<ProjectInstructionCompilerResult>;
 
 export interface PrepareProjectInstructionsOptions {
@@ -153,6 +158,8 @@ export interface PrepareProjectInstructionsOptions {
   compiler?: ProjectInstructionCompiler;
   compilerIdentity?: string;
   compilerFailureBackoffMs?: number;
+  deadlineSeconds?: number;
+  signal?: AbortSignal;
 }
 
 export interface ProjectInstructionState {
@@ -168,6 +175,8 @@ export interface ProjectInstructionTurnRoutes {
 export interface ProjectInstructionRefreshOptions {
   /** Explicit user retry (`/reload`): skip the compiler-failure backoff and make one real compile attempt. */
   retryFailedCompilation?: boolean;
+  deadlineSeconds?: number;
+  signal?: AbortSignal;
 }
 
 export interface ProjectInstructionController {

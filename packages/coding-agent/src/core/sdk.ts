@@ -101,6 +101,8 @@ export interface CreateAgentSessionOptions extends AgentSessionPolicyOptions {
   projectInstructionCompilerIdentity?: string;
   projectInstructionCompilerModel?: string;
   projectInstructionMode?: ProjectInstructionDeliveryMode;
+  /** Maximum cold-start instruction compilation time in seconds. Zero disables this deadline. */
+  projectInstructionStartupDeadline?: number;
   /** Session manager. Default: SessionManager.create(cwd) */
   sessionManager?: SessionManager;
   /** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
@@ -267,9 +269,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
     }
   }
-
   let thinkingLevel = options.thinkingLevel;
-
   // If session has data, restore thinking level from it
   if (thinkingLevel === undefined && hasExistingSession) {
     thinkingLevel = hasThinkingEntry
@@ -293,7 +293,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       : sessionPolicy.taskVerification.completionMode;
   const defaultMaxTokens = options.maxTokens;
   let agent: Agent;
-
   const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
   agent = new Agent({
@@ -401,6 +400,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
             compilerModel: projectInstructionCompilerModel,
             compiler: options.projectInstructionCompiler,
             compilerIdentity: options.projectInstructionCompilerIdentity,
+            startupDeadlineSeconds: options.projectInstructionStartupDeadline,
           }),
         )
       : undefined;

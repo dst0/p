@@ -7,6 +7,7 @@ import { mergeProviderAttributionHeaders } from "../provider-attribution.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SettingsManager } from "../settings-manager.ts";
 import { buildProjectInstructionCompilerModelIdentity } from "./compiler-reasoning-control.ts";
+import { assertValidProjectInstructionStartupDeadline } from "./compiler-runner.ts";
 import { createProjectInstructionController } from "./controller.ts";
 import { compileProjectInstructionsWithModel } from "./model-compiler.ts";
 import type { ProjectInstructionCompiler, ProjectInstructionController } from "./types.ts";
@@ -21,6 +22,7 @@ interface CreateSessionProjectInstructionControllerOptions {
   compilerModel?: Model<Api>;
   compiler?: ProjectInstructionCompiler;
   compilerIdentity?: string;
+  startupDeadlineSeconds?: number;
 }
 
 const DEFAULT_COMPILER_FAILURE_BACKOFF_MS = 5 * 60_000;
@@ -29,12 +31,16 @@ export const DEFAULT_MODEL_COMPILER_CONTRACT_REVISION = "exact-source-v11-sparse
 export async function createSessionProjectInstructionController(
   options: CreateSessionProjectInstructionControllerOptions,
 ): Promise<ProjectInstructionController> {
+  assertValidProjectInstructionStartupDeadline(options.startupDeadlineSeconds);
   const compiler =
     options.compiler ??
-    (async (request) => {
+    (async (request, compileOptions) => {
       const model = options.compilerModel ?? options.getModel();
       if (!model) throw new Error("No model is available to compile project instructions");
       const auth = await options.modelRegistry.getApiKeyAndHeaders(model);
+      if (compileOptions?.signal?.aborted) {
+        throw compileOptions.signal.reason ?? new Error("Project instruction compilation aborted");
+      }
       if (!auth.ok) throw new Error(auth.error);
       const configuredTimeout = options.settingsManager.getHttpIdleTimeoutMs();
       return compileProjectInstructionsWithModel(request, {
@@ -43,6 +49,7 @@ export async function createSessionProjectInstructionController(
         headers: mergeProviderAttributionHeaders(model, options.settingsManager, undefined, auth.headers),
         timeoutMs: configuredTimeout === 0 ? 60_000 : configuredTimeout,
         reasoning: options.thinkingLevel,
+        signal: compileOptions?.signal,
       });
     });
   const customCompilerIdentity = options.compilerIdentity?.trim() || `sdk-custom-ephemeral:${randomUUID()}`;
@@ -64,7 +71,9 @@ export async function createSessionProjectInstructionController(
     },
     compilerFailureBackoffMs: options.compiler ? undefined : DEFAULT_COMPILER_FAILURE_BACKOFF_MS,
   });
-  await controller.refresh();
+  await controller.refresh({
+    deadlineSeconds: options.startupDeadlineSeconds,
+  });
   return controller;
 }
 

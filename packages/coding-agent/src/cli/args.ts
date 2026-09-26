@@ -9,6 +9,7 @@ import {
   PROJECT_INSTRUCTION_MODES,
   type ProjectInstructionDeliveryMode,
   parseCompletionMode,
+  parseNonNegativeIntegerFlag,
   parsePositiveIntegerFlag,
   TASK_VERIFICATION_SELECTIONS,
   type TaskVerificationSelection,
@@ -29,6 +30,7 @@ export interface Args {
   runBudget?: RunBudgetPolicy;
   completionMode?: CompletionMode;
   projectInstructionMode?: ProjectInstructionDeliveryMode;
+  projectInstructionStartupDeadline?: number;
   taskVerificationMode?: TaskVerificationSelection;
   projectInstructionCompilerModel?: string;
   continue?: boolean;
@@ -188,6 +190,16 @@ export function parseArgs(args: string[]): Args {
           message: "--project-instruction-compiler-model requires a provider/id value",
         });
       } else result.projectInstructionCompilerModel = args[++i];
+    } else if (arg === "--project-instruction-startup-deadline") {
+      const deadline = parseNonNegativeIntegerFlag(args[++i] ?? "");
+      if (deadline === undefined) {
+        result.diagnostics.push({
+          type: "error",
+          message: `--project-instruction-startup-deadline requires a non-negative integer (0 to disable), got "${args[i] ?? ""}"`,
+        });
+      } else {
+        result.projectInstructionStartupDeadline = deadline;
+      }
     } else if (arg === "--task-verification") {
       const mode = args[i + 1];
       if (mode && !mode.startsWith("-") && isTaskVerificationSelection(mode)) {

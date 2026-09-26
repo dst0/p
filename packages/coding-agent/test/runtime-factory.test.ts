@@ -100,6 +100,7 @@ beforeEach(() => {
       model: { provider: "provider" },
       noTools: false,
       projectInstructionCompilerModel: "compiler-provider/compiler-model",
+      projectInstructionStartupDeadline: 3,
       scopedModels: [],
       taskVerificationMode: "audit",
       thinkingLevel: "high",
@@ -146,6 +147,7 @@ describe("CLI runtime factory", () => {
     expect(serviceMocks.createAgentSessionFromServices).toHaveBeenCalledWith(
       expect.objectContaining({
         projectInstructionCompilerModel: "compiler-provider/compiler-model",
+        projectInstructionStartupDeadline: 3,
         taskVerificationMode: "audit",
       }),
     );
@@ -169,7 +171,6 @@ describe("CLI runtime factory", () => {
     } as never);
     expect(serviceMocks.resolveProjectTrusted).toHaveBeenCalledTimes(1);
   });
-
   it("reports an API key without a model and trusts projects without resources", async () => {
     runtimeState.hasTrustResources = false;
     runtimeState.buildResult = {

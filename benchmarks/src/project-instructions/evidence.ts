@@ -224,6 +224,7 @@ export function configureProjectInstructionProbe(
   args.push("--extension", options.projectInstructionProbe, "--project-instructions", options.projectInstructions);
   if (options.projectInstructionCompilerModel)
     args.push("--project-instruction-compiler-model", options.projectInstructionCompilerModel);
+  args.push("--project-instruction-startup-deadline", "0");
   env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT = receiptSha256;
   env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE = options.projectInstructions;
   if (options.taskVerificationMode) {

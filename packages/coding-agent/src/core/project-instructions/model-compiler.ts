@@ -35,6 +35,7 @@ interface CompileProjectInstructionsWithModelOptions {
   timeoutMs?: number;
   maxTokens?: number;
   reasoning?: ModelThinkingLevel;
+  signal?: AbortSignal;
 }
 
 export async function compileProjectInstructionsWithModel(
@@ -83,6 +84,7 @@ async function compileRequest(
           maxTokens,
           temperature: 0,
           reasoning: normalizeCompilerReasoning(options.reasoning),
+          signal: options.signal,
         },
       );
     } catch (error) {
