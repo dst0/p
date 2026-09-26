@@ -1,0 +1,5 @@
+{
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Performance optimization for explicit loops, no user-facing changes"
+}
