@@ -190,12 +190,12 @@ test("executable and harness bindings fail closed on missing executables or plac
           pSnapshotSha256: "a".repeat(64),
           pVersion: "0.1.0",
           piExecutable: fauxPi,
-          piVersion: "0.82.1",
+          piVersion: "",
           kiloExecutable: fauxKilo,
           kiloVersion: "2.0.0",
           projectInstructionsFile: agentsFile,
         }),
-      /pi/iu,
+      /Expected pi version is required/u,
     );
 
     assert.throws(
@@ -208,10 +208,10 @@ test("executable and harness bindings fail closed on missing executables or plac
           piExecutable: fauxPi,
           piVersion: "1.0.0",
           kiloExecutable: fauxKilo,
-          kiloVersion: "7.4.17",
+          kiloVersion: "",
           projectInstructionsFile: agentsFile,
         }),
-      /kilo/iu,
+      /Expected kilo version is required/u,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

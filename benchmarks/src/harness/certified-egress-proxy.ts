@@ -17,33 +17,24 @@ export interface CertifiedEgressProxyOptions {
   expectedModel: string;
   apiKey?: string;
 }
-
 export interface CertifiedProxyEvidence {
   requestCount: number;
   requestModels: string[];
   responseModels: string[];
   requestHashes: string[];
 }
-
 type ActiveCell = CertifiedProxyEvidence & { label: string; pending: number; rejected: number; completed: number };
 
-const maxRequestBytes = 16 * 1024 * 1024;
+const maxRequestBytes = 16 * 1024 * 1024,
+  maxBufferedRequestBytes = maxRequestBytes * 2;
+const maxConcurrentRequests = 4;
+const requestTimeoutMillis = 30_000;
 const forwardRequestHeaders = new Set(["accept", "content-type", "user-agent"]);
-const hopHeaders = new Set([
-  "api-key",
-  "authorization",
-  "connection",
-  "host",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "x-api-key",
-]);
-
+const hopHeaders = new Set(
+  "api-key authorization connection host keep-alive proxy-authenticate proxy-authorization te trailer transfer-encoding upgrade x-api-key".split(
+    " ",
+  ),
+);
 export class CertifiedEgressProxy {
   readonly baseUrl: string;
   private readonly upstream: URL;
@@ -54,9 +45,9 @@ export class CertifiedEgressProxy {
   private readonly upstreamRequests = new Set<ClientRequest>();
   private readonly upstreamTerminations = new Set<Promise<void>>();
   private readonly inFlight = new Set<Promise<void>>();
+  private bufferedRequestBytes = 0;
   private active?: ActiveCell;
   private closed = false;
-
   constructor(options: CertifiedEgressProxyOptions, port: number, servers: Server[]) {
     this.upstream = new URL(options.upstreamBaseUrl);
     this.baseUrl = `http://localhost:${port}${this.upstream.pathname.replace(/\/$/u, "")}`;
@@ -65,7 +56,6 @@ export class CertifiedEgressProxy {
     this.expectedModel = options.expectedModel;
     this.ca = this.upstream.protocol === "https:" ? verifiedCertifiedProxyCa() : undefined;
   }
-
   beginCell(label: string): void {
     if (this.closed || this.active) throw new Error("Certified proxy cell already active or closed");
     this.active = {
@@ -79,7 +69,6 @@ export class CertifiedEgressProxy {
       requestHashes: [],
     };
   }
-
   endCell(label: string): CertifiedProxyEvidence {
     const cell = this.active;
     if (!cell || cell.label !== label) throw new Error("Certified proxy cell identity mismatch");
@@ -101,7 +90,6 @@ export class CertifiedEgressProxy {
       requestHashes: [...cell.requestHashes],
     };
   }
-
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -114,22 +102,34 @@ export class CertifiedEgressProxy {
     const failures = results.filter((result) => result.status === "rejected");
     if (failures.length > 0) throw new Error("Certified proxy listener cleanup failed");
   }
-
   handle(request: IncomingMessage, reply: ServerResponse): void {
+    const cell = this.active;
+    if (this.inFlight.size >= maxConcurrentRequests) {
+      this.reject(reply, cell);
+      return;
+    }
+    const deadline = setTimeout(() => {
+      request.destroy();
+      reply.destroy();
+    }, requestTimeoutMillis);
     const work = this.forward(request, reply)
       .catch(() => {
-        if (this.active) this.active.rejected += 1;
-        if (!reply.headersSent) reply.writeHead(502);
-        reply.end();
+        request.resume();
+        if (cell) cell.rejected += 1;
+        if (!reply.headersSent && !reply.destroyed) reply.writeHead(502);
+        if (!reply.writableEnded && !reply.destroyed) reply.end();
       })
-      .finally(() => this.inFlight.delete(work));
+      .finally(() => {
+        clearTimeout(deadline);
+        this.inFlight.delete(work);
+      });
     this.inFlight.add(work);
   }
-
   private async forward(request: IncomingMessage, reply: ServerResponse): Promise<void> {
     const cell = this.active;
     if (!cell || this.closed) return this.reject(reply, cell);
     cell.pending += 1;
+    let body: Buffer | undefined;
     try {
       const target = request.url;
       const basePath = this.upstream.pathname.replace(/\/$/u, "");
@@ -137,12 +137,13 @@ export class CertifiedEgressProxy {
         return this.reject(reply, cell);
       }
       const suffix = target.slice(basePath.length + 1);
-      const isCompletion = request.method === "POST" && suffix === "chat/completions";
-      const isModels = request.method === "GET" && suffix === "models";
-      if (!isCompletion && !isModels) return this.reject(reply, cell);
-      const body = await this.readBody(request);
+      const completion = request.method === "POST" && suffix === "chat/completions";
+      if (!completion && (request.method !== "GET" || suffix !== "models")) return this.reject(reply, cell);
+      if (Number(request.headers["content-length"]) > maxRequestBytes) return this.reject(reply, cell);
+      body = await this.readBody(request);
+      if (!body) return this.reject(reply, cell);
       if (this.active !== cell || this.closed) return this.reject(reply, cell);
-      if (isCompletion) {
+      if (completion) {
         let payload: unknown;
         try {
           payload = JSON.parse(body.toString("utf8"));
@@ -156,30 +157,39 @@ export class CertifiedEgressProxy {
         cell.requestModels.push(model);
         cell.requestHashes.push(createHash("sha256").update(body).digest("hex"));
       }
-      await this.sendUpstream(target, body, request, reply, cell, isCompletion);
+      await this.sendUpstream(target, body, request, reply, cell, completion);
     } finally {
       cell.pending -= 1;
+      if (body) this.bufferedRequestBytes -= body.length;
     }
   }
-
   private reject(reply: ServerResponse, cell: ActiveCell | undefined): void {
     if (cell) cell.rejected += 1;
-    reply.writeHead(403);
-    reply.end();
+    reply.req.resume();
+    if (!reply.destroyed) reply.writeHead(403).end();
   }
-
-  private async readBody(request: IncomingMessage): Promise<Buffer> {
+  private async readBody(request: IncomingMessage): Promise<Buffer | undefined> {
     const chunks: Buffer[] = [];
     let bytes = 0;
-    for await (const chunk of request) {
-      const next = Buffer.from(chunk);
-      bytes += next.length;
-      if (bytes > maxRequestBytes) throw new Error("Certified proxy request size limit exceeded");
-      chunks.push(next);
+    try {
+      for await (const chunk of request) {
+        const next = Buffer.from(chunk);
+        if (
+          bytes + next.length > maxRequestBytes ||
+          this.bufferedRequestBytes + next.length > maxBufferedRequestBytes
+        ) {
+          throw new Error("Certified proxy request size limit exceeded");
+        }
+        bytes += next.length;
+        this.bufferedRequestBytes += next.length;
+        chunks.push(next);
+      }
+      return Buffer.concat(chunks);
+    } catch {
+      this.bufferedRequestBytes -= bytes;
+      return undefined;
     }
-    return Buffer.concat(chunks);
   }
-
   private async sendUpstream(
     target: string,
     body: Buffer,
@@ -188,8 +198,7 @@ export class CertifiedEgressProxy {
     cell: ActiveCell,
     completion: boolean,
   ): Promise<void> {
-    const url = new URL(this.upstream);
-    url.pathname = target;
+    const url = new URL(target, this.upstream);
     const headers: Record<string, string | string[]> = {};
     for (const [key, value] of Object.entries(incoming.headers)) {
       if (value !== undefined && forwardRequestHeaders.has(key)) headers[key] = value;
@@ -254,7 +263,6 @@ export class CertifiedEgressProxy {
     });
   }
 }
-
 export async function startCertifiedEgressProxy(options: CertifiedEgressProxyOptions): Promise<CertifiedEgressProxy> {
   const upstream = new URL(options.upstreamBaseUrl);
   if (
@@ -272,16 +280,15 @@ export async function startCertifiedEgressProxy(options: CertifiedEgressProxyOpt
   let proxy: CertifiedEgressProxy | undefined;
   try {
     const handler = (request: IncomingMessage, reply: ServerResponse) => {
-      if (proxy) proxy.handle(request, reply);
-      else {
-        reply.writeHead(503);
-        reply.end();
-      }
+      if (proxy) return proxy.handle(request, reply);
+      reply.writeHead(503).end();
     };
-    const ipv4 = createServer(handler);
+    const ipv4 = createServer({ headersTimeout: requestTimeoutMillis, requestTimeout: requestTimeoutMillis }, handler);
+    ipv4.maxConnections = maxConcurrentRequests * 2;
     servers.push(ipv4);
     const port = await listenCertifiedProxyServer(ipv4, "127.0.0.1", 0);
-    const ipv6 = createServer(handler);
+    const ipv6 = createServer({ headersTimeout: requestTimeoutMillis, requestTimeout: requestTimeoutMillis }, handler);
+    ipv6.maxConnections = maxConcurrentRequests * 2;
     servers.push(ipv6);
     await listenCertifiedProxyServer(ipv6, "::1", port);
     proxy = new CertifiedEgressProxy(options, port, servers);

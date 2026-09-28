@@ -59,27 +59,14 @@ function resolveBinaryPath(executable: string | undefined, defaultName: string):
   throw new Error(`Missing ${defaultName} executable; certified mode requires a resolved ${defaultName} binary`);
 }
 
-function resolveBinaryVersion(binaryPath: string, expectedVersion?: string): string {
-  const result = spawnSync(binaryPath, ["--version"], { encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout.trim()) {
-    throw new Error(`Unable to run ${binaryPath} --version; certified mode requires an authoritative version`);
-  }
-  const actualVersion = result.stdout.trim();
-  if (expectedVersion?.trim() && actualVersion !== expectedVersion.trim()) {
-    throw new Error(
-      `Installed binary version for ${binaryPath} is ${actualVersion}; expected ${expectedVersion.trim()}`,
-    );
-  }
-  return actualVersion;
-}
-
 function bindExecutable(
   executable: string | undefined,
   defaultName: string,
   expectedVersion?: string,
 ): CertifiedExecutableBinding {
   const binaryPath = resolveBinaryPath(executable, defaultName);
-  const version = resolveBinaryVersion(binaryPath, expectedVersion);
+  const version = expectedVersion?.trim();
+  if (!version) throw new Error(`Expected ${defaultName} version is required before certified verification`);
   const sha256 = hashFile(binaryPath);
   if (!sha256 || sha256 === ZERO_HASH) {
     throw new Error(`Invalid ${defaultName} executable hash placeholder`);
@@ -93,11 +80,10 @@ export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedH
     throw new Error("Missing Node executable; certified mode requires a resolved Node binary");
   }
   const nodePath = realpathSync(nodeExecutable);
-  const nodeResult = spawnSync(nodePath, ["--version"], { encoding: "utf8" });
-  if (nodeResult.status !== 0 || !nodeResult.stdout.trim()) {
-    throw new Error("Unable to run Node --version; certified mode requires an authoritative version");
+  if (nodePath !== realpathSync(process.execPath)) {
+    throw new Error("Certified Node executable must match the current process runtime");
   }
-  const nodeVersion = nodeResult.stdout.trim();
+  const nodeVersion = process.version;
   if (
     inputs.nodeVersion?.trim() &&
     nodeVersion !== inputs.nodeVersion.trim() &&

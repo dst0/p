@@ -28,6 +28,7 @@ import {
 } from "./certification.ts";
 import { createCertifiedTaskVariants } from "./certification-holdout.ts";
 import { sanitizeCertifiedReceiptArtifacts } from "./certification-receipt-cleanup.ts";
+import { verifyCertifiedCandidateVersions } from "./certification-version-probes.ts";
 import { resolveAgentVersions } from "./installed-agent-versions.ts";
 import { parseRecording } from "./recording-metrics.ts";
 import { completeBenchmarkReport } from "./result-publication.ts";
@@ -89,6 +90,10 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
   const selectedTasks =
     options.certified && harnessBinding ? createCertifiedTaskVariants(requestedTasks, harnessBinding) : requestedTasks;
   try {
+    if (options.certified) {
+      if (!harnessBinding) throw new Error("Certified executable binding is missing");
+      await verifyCertifiedCandidateVersions(options, harnessBinding);
+    }
     agentDirs = createBenchmarkAgentDirectories({
       ...options,
       authFile: defaultAuthFile,

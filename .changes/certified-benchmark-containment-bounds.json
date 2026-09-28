@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Run certified benchmark version probes only inside a fork-denied, network-denied sandbox and bound parent proxy ingress across agents."
+}

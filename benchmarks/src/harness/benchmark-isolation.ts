@@ -7,6 +7,7 @@ export interface BenchmarkIsolationPaths {
   configDir?: string;
   extraReadPaths?: readonly string[];
   networkHosts?: readonly string[];
+  allowProcessFork?: boolean;
 }
 
 export interface SandboxedBenchmarkCommand {
@@ -67,7 +68,7 @@ export function createBenchmarkSandboxProfile(
     "(deny default)",
     '(import "system.sb")',
     "(allow process-exec)",
-    "(allow process-fork)",
+    ...(paths.allowProcessFork === false ? [] : ["(allow process-fork)"]),
     "(allow signal (target self))",
     "(allow sysctl-read)",
     "(allow mach-lookup)",
