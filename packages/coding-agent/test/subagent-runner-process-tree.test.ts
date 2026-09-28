@@ -1,10 +1,11 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "../examples/extensions/subagent/agents.ts";
 import type { SingleResult, SubagentDetails } from "../examples/extensions/subagent/formatters.ts";
-import { runSingleAgent } from "../examples/extensions/subagent/runner.ts";
+import { processTreeIsAlive, runSingleAgent } from "../examples/extensions/subagent/runner.ts";
 
 const originalScript = process.argv[1];
 const agent: AgentConfig = {
@@ -96,6 +97,36 @@ async function exerciseProcessTreeFixture(fixture: string): Promise<void> {
 }
 
 describe("subagent process-tree cancellation", () => {
+  it("classifies process-group liveness probe errors without losing permission evidence", async () => {
+    if (process.platform === "win32") return;
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 30000)"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    const pid = child.pid;
+    if (pid === undefined) throw new Error("Fixture process did not start");
+    const nativeKill = process.kill.bind(process);
+    let probeCode = "EPERM";
+    const killSpy = vi.spyOn(process, "kill").mockImplementation((target, signal) => {
+      if (target === -pid && signal === 0) {
+        throw Object.assign(new Error(`liveness probe ${probeCode}`), { code: probeCode });
+      }
+      return nativeKill(target, signal);
+    });
+    try {
+      expect(processTreeIsAlive(child)).toBe(true);
+      expect(killSpy).toHaveBeenCalledWith(-pid, 0);
+      probeCode = "ESRCH";
+      expect(processTreeIsAlive(child)).toBe(false);
+      probeCode = "EINVAL";
+      expect(() => processTreeIsAlive(child)).toThrow(/liveness probe EINVAL/u);
+    } finally {
+      killSpy.mockRestore();
+      nativeKill(-pid, "SIGKILL");
+      await new Promise<void>((resolve) => child.once("close", () => resolve()));
+    }
+  });
+
   it("joins a descendant that inherits stdio", async () => {
     await exerciseProcessTreeFixture("subagent-process-tree.js");
   }, 15_000);
