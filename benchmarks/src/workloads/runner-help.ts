@@ -42,8 +42,9 @@ Options:
   --project-instructions-file <path> Authoritative source copied into each P fixture
   --thinking <level>           P reasoning level: off, minimal, low, medium, high, or xhigh
   --certified                 Require p, pi, kilo across all 4 tasks and >=3 runs
-  --certified-network-host <host[:port]>
-                              Repeat per required LLM endpoint; all other network egress is denied
+  --certified-network-host <host:port>
+                              Legacy manual egress option; certified mode rejects it
+                              and creates a parent-owned loopback proxy automatically
   --max-duration-ratio <n>    Maximum allowed P / baseline duration ratio (default: 1.0)
   --max-token-ratio <n>       Maximum allowed P / baseline token ratio (default: 1.0)
   --max-cost-ratio <n>        Maximum allowed P / baseline cost ratio (opt-in)

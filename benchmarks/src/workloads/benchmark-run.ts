@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { augmentBenchmarkPath } from "../agents/environment.ts";
@@ -7,11 +6,12 @@ import { type BenchmarkAgentDirectories, createBenchmarkAgentDirectories } from 
 import { finalizeBenchmarkAgentResources } from "../agents/resources-finalization.ts";
 import { createBenchmarkAuthOutputGuard } from "../harness/auth-output-guard.ts";
 import { consumeBenchmarkAuthSource } from "../harness/auth-source.ts";
+import { type CertifiedEgressProxy, startCertifiedEgressProxy } from "../harness/certified-egress-proxy.ts";
 import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
+import { readCertifiedProxyConfig, rewriteCertifiedAgentConfigs } from "../harness/certified-proxy-config.ts";
 import { verifyBenchmarkEvaluationSnapshot } from "../harness/evaluation-freeze.ts";
-import { benchmarkModels, modelAliasForAgent } from "../harness/model-attribution.ts";
-import { type BenchmarkResult, createBenchmarkReport } from "../harness/report.ts";
-import { sanitizeBenchmarkEvidence } from "../harness/result-sanitization.ts";
+import { modelAliasForAgent } from "../harness/model-attribution.ts";
+import type { BenchmarkResult } from "../harness/report.ts";
 import { writeBenchmarkStderrLog } from "../harness/stderr-log.ts";
 import { createBenchmarkWorkspace } from "../harness/workspace-repository.ts";
 import { captureRecordedProjectInstructionEvidence } from "../project-instructions/evidence.ts";
@@ -21,7 +21,6 @@ import { createBenchmarkOutputPath } from "./benchmark-output.ts";
 import { finalizeAgentBenchmarkRun, isBenchmarkMutableArtifactsUnsafeError } from "./benchmark-run-finalization.ts";
 import { validateBenchmarkRuntimeInputs } from "./benchmark-runtime-validation.ts";
 import {
-  finalizeCertifiedReport,
   planRunCells,
   runCertifiedPreflights,
   setupCertifiedBenchmark,
@@ -31,7 +30,7 @@ import { createCertifiedTaskVariants } from "./certification-holdout.ts";
 import { sanitizeCertifiedReceiptArtifacts } from "./certification-receipt-cleanup.ts";
 import { resolveAgentVersions } from "./installed-agent-versions.ts";
 import { parseRecording } from "./recording-metrics.ts";
-import { publishBenchmarkResults } from "./result-publication.ts";
+import { completeBenchmarkReport } from "./result-publication.ts";
 import { parseRunnerArgs, printRunnerHelp, repoRoot } from "./runner-options.ts";
 import {
   type AgyStartupEvidence,
@@ -78,10 +77,10 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
   console.log(`Sequential order: ${options.agents.join(" -> ")}`);
   const authOutputGuard = createBenchmarkAuthOutputGuard([defaultAuthFile]);
   let agentDirs: BenchmarkAgentDirectories | undefined;
+  let proxy: CertifiedEgressProxy | undefined;
   let mutableArtifactsSafe = true;
   let primaryError: unknown;
   let projectInstructionOuterAuthority: Parameters<typeof sendCommittedProjectInstructionOuterAuthority>[1] | undefined;
-  const resultPath = join(output, "results.json");
   const {
     freeze: evaluationFreeze,
     binding: harnessBinding,
@@ -95,8 +94,16 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
       authFile: defaultAuthFile,
     });
     for (const a of ["pi", "p"] as const) authOutputGuard.capture(join(agentDirs.dirs[a], "auth.json"));
+    if (options.certified) {
+      const config = readCertifiedProxyConfig(options, agentDirs.dirs);
+      proxy = await startCertifiedEgressProxy(config);
+      options.certifiedNetworkHosts = [new URL(proxy.baseUrl).host];
+      rewriteCertifiedAgentConfigs(options, agentDirs.dirs, proxy.baseUrl);
+    }
     if (options.agents.includes("kilo")) {
+      proxy?.beginCell("startup:kilo");
       const evidence = await runKiloStartupProbe(options, agentDirs.dirs.kilo, output, deadline);
+      if (proxy) evidence.proxyEvidence = proxy.endCell("startup:kilo");
       startupProbes.kilo = evidence;
       console.log(`Kilo startup probe: passed, resolved ${evidence.resolvedModel}`);
     }
@@ -113,6 +120,8 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
         deadline,
         receiptValue,
         harnessBinding,
+        undefined,
+        proxy,
       );
     }
     for (let run = 1; run <= options.runs; run += 1) {
@@ -130,6 +139,8 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
         const taskTimeout = Math.max(task.timeoutSeconds ?? options.timeoutSeconds, options.minimumTimeoutSeconds ?? 0);
         const recordingName = `${agent}-run-${run}-${task.id}.jsonl.br`;
         const stderrStem = `${agent}-run-${run}-${task.id}`;
+        const proxyCell = `run:${run}:${agent}:${task.id}`;
+        proxy?.beginCell(proxyCell);
         let result: Awaited<ReturnType<typeof runAgentTask>>;
         try {
           result = await runAgentTask(
@@ -146,6 +157,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
           if (isBenchmarkMutableArtifactsUnsafeError(error)) mutableArtifactsSafe = false;
           throw error;
         }
+        const proxyEvidence = proxy?.endCell(proxyCell);
         if (options.certified && harnessBinding) {
           verifyWorkspaceInstructions(workspace, harnessBinding.projectInstructions.sha256);
         }
@@ -211,6 +223,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
           stderr: join("stderr", stderrName),
           workspace: workspace.slice(output.length + 1),
           projectInstructionEvidence,
+          proxyEvidence,
           metrics,
           quality,
         });
@@ -221,61 +234,27 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
         );
       }
     }
-    const reportStartupProbes = Object.fromEntries(
-      Object.entries(startupProbes)
-        .filter(([_, p]) => p?.resolvedModel)
-        .map(([k, p]) => [k, { status: p!.status, resolvedModel: p!.resolvedModel }]),
-    );
-    const summaries = createBenchmarkReport(
+    const publication = completeBenchmarkReport({
       options,
       versions,
       results,
       output,
-      selectedTasks,
-      reportStartupProbes,
-      nudgePenaltyPerNudge,
-    );
-    const certification = finalizeCertifiedReport(options, results, output, evaluationFreeze, harnessBinding);
-    const resultDocument = {
-      generatedAt: new Date().toISOString(),
-      agents: options.agents,
-      models: benchmarkModels(options),
-      versions,
-      startupProbes,
-      runs: options.runs,
-      timeoutSeconds: options.timeoutSeconds,
-      maxRuntimeSeconds: options.maxRuntimeSeconds,
-      projectInstructions: options.projectInstructions,
-      taskVerificationMode: options.taskVerificationMode,
-      tasks: selectedTasks.map(({ id, description, timeoutSeconds }) => ({
-        id,
-        description,
-        timeoutSeconds,
-      })),
-      summaries,
-      ...(certification ? { certification } : {}),
-      results,
-    };
-    const sanitized = sanitizeBenchmarkEvidence(resultDocument, {
-      output,
       repoRoot,
-      home: homedir(),
+      tasks: selectedTasks,
+      startupProbes,
+      freeze: evaluationFreeze,
+      binding: harnessBinding,
     });
-    projectInstructionOuterAuthority = publishBenchmarkResults(
-      resultPath,
-      sanitized,
-      options.certified,
-      options.projectInstructions,
-    );
-    console.log(`Report: ${join(output, "report.md")}`);
-    if (!results.some((result) => result.status !== "skipped") || (certification && !certification.passed)) {
+    projectInstructionOuterAuthority = publication.authority;
+    if (!results.some((result) => result.status !== "skipped") || !publication.certificationPassed) {
       process.exitCode = 1;
     }
   } catch (error) {
     primaryError = error;
     if (isBenchmarkMutableArtifactsUnsafeError(error)) mutableArtifactsSafe = false;
-    throw error;
-  } finally {
+  }
+  let finalizationError: unknown;
+  try {
     finalizeAgentBenchmarkRun({
       primaryError,
       mutableArtifactsSafe,
@@ -285,7 +264,21 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
       },
       disposeFreeze: () => evaluationFreeze?.dispose(),
     });
+  } catch (error) {
+    finalizationError = error;
   }
+  let proxyCloseError: unknown;
+  try {
+    await proxy?.close();
+  } catch (error) {
+    proxyCloseError = error;
+  }
+  const failure = finalizationError ?? primaryError;
+  if (failure !== undefined && proxyCloseError !== undefined) {
+    throw new AggregateError([failure, proxyCloseError], "Benchmark cleanup failed");
+  }
+  if (proxyCloseError !== undefined) throw proxyCloseError;
+  if (failure !== undefined) throw failure;
   if (projectInstructionOuterAuthority) {
     if (!options.projectInstructionProofReceipt) {
       throw new Error("Project instruction proof receipt is missing from the committed result");

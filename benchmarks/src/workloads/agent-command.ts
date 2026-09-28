@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { augmentBenchmarkPath } from "../agents/environment.ts";
 import { createSandboxedBenchmarkCommand } from "../harness/benchmark-isolation.ts";
+import { certifiedCandidateEnvironment } from "../harness/certified-candidate-environment.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import { configureProjectInstructionProbe } from "../project-instructions/evidence.ts";
 import { type AgentId, type RunnerOptions, repoRoot } from "./runner-options.ts";
@@ -44,9 +45,9 @@ function applyExtraCa(env: NodeJS.ProcessEnv, certified: boolean): void {
   }
 }
 
-function kiloEnvironment(configDir: string, certified = false): NodeJS.ProcessEnv {
+function kiloEnvironment(configDir: string, certified = false, runtime?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    ...sanitizeBenchmarkGitEnvironment(),
+    ...(certified ? certifiedCandidateEnvironment(configDir, runtime) : sanitizeBenchmarkGitEnvironment()),
     HOME: configDir,
     NO_COLOR: "1",
     XDG_CACHE_HOME: join(configDir, "cache"),
@@ -67,6 +68,9 @@ export function commandForAgent(
   isContinue = false,
   promptOverride?: string,
 ): AgentCommand {
+  if (options.certified && agent !== "p" && agent !== "pi" && agent !== "kilo") {
+    throw new Error("Certified mode does not permit AGY or Codex commands");
+  }
   const prompt = promptOverride ?? task.prompt;
   if (agent === "agy") {
     const args = [
@@ -97,7 +101,7 @@ export function commandForAgent(
     return {
       executable: options.kiloExecutable ?? "kilo",
       args,
-      env: kiloEnvironment(configDir, options.certified),
+      env: kiloEnvironment(configDir, options.certified, options.candidateRuntimePath),
       cwd: workspace,
     };
   }
@@ -139,7 +143,9 @@ export function commandForAgent(
     commonArgs.push("--no-context-files");
   }
   if (isContinue) commonArgs.push("--continue");
-  const env: NodeJS.ProcessEnv = sanitizeBenchmarkGitEnvironment();
+  const env: NodeJS.ProcessEnv = options.certified
+    ? certifiedCandidateEnvironment(configDir, options.candidateRuntimePath)
+    : sanitizeBenchmarkGitEnvironment();
   env.P_CODING_AGENT_DIR = configDir;
   env.PI_CODING_AGENT_DIR = configDir;
   if (agent === "p" && options.projectInstructions) env.HOME = configDir;
@@ -157,7 +163,7 @@ export function commandForAgent(
   env.PI_SKIP_VERSION_CHECK = "1";
   applyExtraCa(env, options.certified ?? false);
   env.NO_COLOR = "1";
-  env.PATH = augmentBenchmarkPath(repoRoot);
+  if (!options.certified) env.PATH = augmentBenchmarkPath(repoRoot);
   if (agent === "p") {
     return { executable: process.execPath, args: [options.pCli, ...commonArgs], env, cwd: workspace };
   }
@@ -190,7 +196,7 @@ export function commandForKiloModelResolution(
   return {
     executable: options.kiloExecutable ?? "kilo",
     args: ["models", provider, "--verbose", "--pure"],
-    env: kiloEnvironment(configDir, options.certified),
+    env: kiloEnvironment(configDir, options.certified, options.candidateRuntimePath),
     cwd: workspace,
   };
 }

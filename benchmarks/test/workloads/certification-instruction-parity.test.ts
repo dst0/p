@@ -195,7 +195,11 @@ test("all three preflights receive only the question while runtime auto-loading 
       ["p", "pi", "kilo"],
       "mock/test-model",
     );
-    assert.deepEqual(failures, []);
+    assert.deepEqual(failures, [
+      "missing certified proxy evidence for instruction parity p",
+      "missing certified proxy evidence for instruction parity pi",
+      "missing certified proxy evidence for instruction parity kilo",
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -269,8 +273,8 @@ test("fake agent echoing argv fails because receipt value is never passed in arg
       ["p", "pi", "kilo"],
       "mock/test-model",
     );
-    assert.equal(failures.length, 3);
-    for (const f of failures) {
+    assert.equal(failures.length, 6);
+    for (const f of failures.filter((failure) => failure.includes("Instruction parity preflight failed"))) {
       assert.match(f, /Instruction parity preflight failed for agent/u);
     }
   } finally {
