@@ -33,3 +33,6 @@
 ## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
 **Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying file paths in `isSkippedWorkspaceEffectPath`) using `.split('/').some(...)` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
 **Action:** Replace `.split('/').some(...)` boundary checks with a pre-compiled regex with `(?:\/|^)` and `(?:\/|$)` boundaries. Also, correctly escape regex literals (e.g., `.` or `?`) when building patterns dynamically from static strings using `str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")`.
+## 2026-09-29 - Array operations in print-mode text extraction
+**Learning:** Extracting text strings from nested message/content structures via chained array methods (`.flatMap().filter().map().join('')`) creates excessive intermediate array allocations in JavaScript, increasing garbage collection pressure.
+**Action:** Replace functional array method chains with explicit `for` loops and direct string concatenation when accumulating text values from arrays, especially in parsing or formatting paths.
