@@ -44,9 +44,22 @@ export function getFinalResponseAssistantMessages(messages: readonly AgentMessag
 }
 
 export function assistantMessagesText(messages: readonly AssistantMessage[]): string {
-  return messages
-    .flatMap((message) => message.content.filter((content) => content.type === "text").map((content) => content.text))
-    .join("");
+  // Avoids `.flatMap().filter().map().join("")` which causes heavy array allocations in tight loops.
+  // Uses explicit `for` loop and string concatenation for extracting text content from arrays,
+  // which is significantly faster and creates less GC pressure.
+  let text = "";
+  for (let i = 0; i < messages.length; i++) {
+    const contentArr = messages[i]?.content;
+    if (contentArr) {
+      for (let j = 0; j < contentArr.length; j++) {
+        const item = contentArr[j];
+        if (item?.type === "text" && item.text) {
+          text += item.text;
+        }
+      }
+    }
+  }
+  return text;
 }
 
 function findLastFinishWorkResultIndex(messages: readonly AgentMessage[]): number {
