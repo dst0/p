@@ -367,3 +367,7 @@ These rules are the portable minimum for Destination Works repositories. Reposit
 - Rehearse backup/restore and rollback through safe isolated commands that produce inspectable evidence; documentation-string checks alone are not operational proof.
 
 <!-- /destinationworks-universal-agent-baseline:v1 -->
+
+## Workflow Guidelines
+
+- **Worktree Cleanup**: Once a pull request is merged, always remove its temporary git worktree (`git worktree remove <path>`) and prune stale tracking (`git worktree prune`) to prevent disk space exhaustion.
