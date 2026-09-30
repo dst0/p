@@ -1,5 +1,6 @@
 import type { CertifiedHarnessBinding } from "./certification-binding.ts";
 import type { CertifiedInstructionReceipt } from "./certification-preflight.ts";
+import { validateCertifiedProxyEvidence } from "./certification-proxy-evidence.ts";
 
 const HASH_RE = /^[a-f0-9]{64}$/u;
 
@@ -30,6 +31,7 @@ function validateReceiptOutcome(
   failures: string[],
 ): void {
   const { agent } = receipt;
+  failures.push(...validateCertifiedProxyEvidence(receipt.proxyEvidence, `instruction parity ${agent}`, expectedModel));
   if (receipt.status !== "passed" || !receipt.responseMatched) {
     failures.push(
       `Instruction parity preflight failed for agent: ${agent}${receipt.error ? ` (${receipt.error})` : ""}`,

@@ -6,6 +6,7 @@ import { copyBenchmarkAuthSource } from "../harness/auth-source.ts";
 export interface BenchmarkAgentDirectoryOptions {
   modelsFile?: string;
   authFile: string;
+  certified?: boolean;
   kiloConfig?: string;
   codexConfig?: string;
 }
@@ -35,7 +36,8 @@ export function createBenchmarkAgentDirectories(
       const dir = join(root, agent);
       mkdirSync(dir, { recursive: true });
       copyOptionalPrivateFile(options.modelsFile, join(dir, "models.json"));
-      copyBenchmarkAuthSource(options.authFile, join(dir, "auth.json"));
+      if (options.certified) writeFileSync(join(dir, "auth.json"), "{}\n", { mode: 0o600 });
+      else copyBenchmarkAuthSource(options.authFile, join(dir, "auth.json"));
       if (agent === "p") {
         writeFileSync(join(dir, "settings.json"), `${JSON.stringify({ runBudget: { mode: "unlimited" } })}\n`, {
           mode: 0o600,

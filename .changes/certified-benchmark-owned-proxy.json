@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Route certified P, Pi, and Kilo benchmark traffic through a fixed parent-owned proxy, isolate candidate credentials, and require per-cell wire-model evidence."
+}

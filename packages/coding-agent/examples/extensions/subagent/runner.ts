@@ -81,14 +81,16 @@ export function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): 
   return safeChildKill(child, signal);
 }
 
-function processTreeIsAlive(child: ChildProcess): boolean {
+export function processTreeIsAlive(child: ChildProcess): boolean {
   if (process.platform === "win32" || child.pid === undefined) return false;
   try {
     process.kill(-child.pid, 0);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw error;
   }
 }
 
