@@ -33,3 +33,6 @@
 ## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
 **Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying file paths in `isSkippedWorkspaceEffectPath`) using `.split('/').some(...)` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
 **Action:** Replace `.split('/').some(...)` boundary checks with a pre-compiled regex with `(?:\/|^)` and `(?:\/|$)` boundaries. Also, correctly escape regex literals (e.g., `.` or `?`) when building patterns dynamically from static strings using `str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")`.
+## 2026-11-12 - Avoid spreading Sets into Arrays for simple .some() checks
+**Learning:** Using the spread operator to convert a `Set` into an array purely to call `.some()` (e.g., `[...mySet].some(...)`) creates an entirely unnecessary intermediate array allocation of size N, resulting in degraded performance in hot paths.
+**Action:** Replace `[...mySet].some(...)` checks with explicit `for...of` loops over the `Set`, returning true if the condition is met. This achieves the same short-circuiting logic with O(1) allocation overhead.

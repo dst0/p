@@ -79,7 +79,11 @@ function directoryOptionValue(option: string): string | undefined {
 }
 
 function hasRejectedInlineScope(option: string): boolean {
-  return [...REJECTED_SCOPE_OPTIONS].some((name) => option.startsWith(`${name}=`));
+  // Optimization: explicit for-loop avoids [...Set] allocation overhead
+  for (const name of REJECTED_SCOPE_OPTIONS) {
+    if (option.startsWith(`${name}=`)) return true;
+  }
+  return false;
 }
 
 function packageScript(cwd: string, scriptName: string, sessionRoot: string): string | undefined {
