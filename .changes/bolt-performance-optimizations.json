@@ -1,6 +1,7 @@
 {
+  "schemaVersion": 1,
   "type": "None",
-  "description": "Refactored internal loops in compiler-scope and task-verification for performance by pre-compiling regex and replacing [...set] spread iterators with native for-loops.",
+  "reason": "Refactored internal loops in compiler-scope and task-verification for performance by pre-compiling regex and replacing [...set] spread iterators with native for-loops.",
   "packages": [
     "coding-agent"
   ]
