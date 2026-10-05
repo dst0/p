@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "type": "None",
+  "reason": "Internal performance optimization in file discovery path for code-index",
+  "packages": ["coding-agent"]
+}

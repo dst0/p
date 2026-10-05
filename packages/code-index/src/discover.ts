@@ -23,6 +23,12 @@ const SENSITIVE_FILE_NAMES = new Set([
   ".netrc",
 ]);
 
+// Optimization: Pre-compile regex to avoid splitting paths and iterating arrays in tight loops
+const SENSITIVE_DIR_REGEX = new RegExp(
+  `(?:^|\\/)(?:${[...SENSITIVE_DIRECTORY_NAMES].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?:\\/|$)`,
+  "i",
+);
+
 /**
  * Load and parse a .gitignore file.
  */
@@ -177,14 +183,18 @@ export function discoverFilesWithOptions(repoPath: string, options: DiscoverFile
 }
 
 function isSensitivePath(relativePath: string): boolean {
-  const segments = relativePath.split("/");
-  if (segments.some((segment) => SENSITIVE_DIRECTORY_NAMES.has(segment.toLowerCase()))) return true;
-  const basename = segments.at(-1)?.toLowerCase() ?? "";
-  if (SENSITIVE_FILE_NAMES.has(basename)) return true;
-  if (basename.endsWith(".pem") || basename.endsWith(".key")) return true;
-  if (basename === ".env") return true;
-  if (basename.startsWith(".env.")) {
-    return ![".env.example", ".env.sample", ".env.template"].includes(basename);
+  // Optimization: use RegExp to check directories without splitting the entire path string and iterating
+  if (SENSITIVE_DIR_REGEX.test(relativePath)) return true;
+
+  const lastSlashIdx = relativePath.lastIndexOf("/");
+  const basename = lastSlashIdx === -1 ? relativePath : relativePath.slice(lastSlashIdx + 1);
+  const lowerBasename = basename.toLowerCase();
+
+  if (SENSITIVE_FILE_NAMES.has(lowerBasename)) return true;
+  if (lowerBasename.endsWith(".pem") || lowerBasename.endsWith(".key")) return true;
+  if (lowerBasename === ".env") return true;
+  if (lowerBasename.startsWith(".env.")) {
+    return lowerBasename !== ".env.example" && lowerBasename !== ".env.sample" && lowerBasename !== ".env.template";
   }
   return false;
 }

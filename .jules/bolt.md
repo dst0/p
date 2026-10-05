@@ -33,3 +33,6 @@
 ## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
 **Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying file paths in `isSkippedWorkspaceEffectPath`) using `.split('/').some(...)` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
 **Action:** Replace `.split('/').some(...)` boundary checks with a pre-compiled regex with `(?:\/|^)` and `(?:\/|$)` boundaries. Also, correctly escape regex literals (e.g., `.` or `?`) when building patterns dynamically from static strings using `str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")`.
+## 2026-10-05 - Avoid string splitting for directory validation
+**Learning:** Using `.split("/")` followed by `.some()` creates intermediate array allocations and repetitive iteration when evaluating path segments. In a very tight loop (e.g. iterating millions of discovered files), this has measurable GC and CPU overhead.
+**Action:** When searching paths for specific segment matches (like checking for blocked directories), pre-compile a RegExp using `(?:^|\\/)` and `(?:\\/|$)` boundaries. Use `.test()` instead of splitting the string.
