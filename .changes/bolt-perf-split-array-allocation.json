@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Optimize array allocation from .split('/') with pre-compiled regex for path boundary and traversal checks"
+}

@@ -80,9 +80,12 @@ function safeAssignment(value: string | undefined): boolean {
   return SAFE_ENVIRONMENT.has(name.toLocaleUpperCase("en-US"));
 }
 
+// ⚡ Bolt: Pre-compiled regex avoids array allocations from .split('/')
+const PARENT_TRAVERSAL_PATTERN = /(?:^|\/)\.\.(?:\/|$)/u;
+
 function boundWorkingDirectory(value: string, sessionRoot: string, cwd: string): string | undefined {
   if (process.platform !== "win32" && value.includes("\\")) return undefined;
-  if (value.replaceAll("\\", "/").split("/").includes("..")) return undefined;
+  if (PARENT_TRAVERSAL_PATTERN.test(value.replaceAll("\\", "/"))) return undefined;
   const target = canonicalPath(resolve(cwd, value));
   const relativePath = relative(canonicalPath(sessionRoot), target);
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath)) ? target : undefined;

@@ -165,9 +165,12 @@ function isDirectoryInclude(pattern: string): boolean {
   return lastSegment.length > 0 && !/[.*?]/u.test(lastSegment);
 }
 
+// ⚡ Bolt: Pre-compiled regex avoids array allocations from .split('/')
+const DEFAULT_EXCLUDED_PATTERN = /(?:^|\/)(?:node_modules|bower_components|jspm_packages)(?:\/|$)/u;
+
 function defaultExcluded(source: string, baseDirectory: string): boolean {
-  const parts = relative(baseDirectory, source).replaceAll("\\", "/").split("/");
-  return parts.some((part) => part === "node_modules" || part === "bower_components" || part === "jspm_packages");
+  const relativePath = relative(baseDirectory, source).replaceAll("\\", "/");
+  return DEFAULT_EXCLUDED_PATTERN.test(relativePath);
 }
 
 function findNearestConfig(cwd: string, sessionRoot: string): string | undefined {
@@ -205,8 +208,11 @@ function existingFile(path: string): string | undefined {
   }
 }
 
+// ⚡ Bolt: Pre-compiled regex avoids array allocations from .split('/')
+const PARENT_TRAVERSAL_PATTERN = /(?:^|\/)\.\.(?:\/|$)/u;
+
 function boundSourcePath(sourcePath: string, sessionRoot: string): string | undefined {
-  if (isAbsolute(sourcePath) || sourcePath.replaceAll("\\", "/").split("/").includes("..")) return undefined;
+  if (isAbsolute(sourcePath) || PARENT_TRAVERSAL_PATTERN.test(sourcePath.replaceAll("\\", "/"))) return undefined;
   const source = resolve(sessionRoot, sourcePath);
   if (!isInside(sessionRoot, source) || (!isTypeScript(source) && !isJavaScript(source))) return undefined;
   try {
