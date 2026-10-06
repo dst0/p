@@ -121,8 +121,11 @@ function isStaticPath(value: string): boolean {
   return process.platform === "win32" || !value.includes("\\");
 }
 
+// ⚡ Bolt: Pre-compiled regex avoids array allocations from .split('/')
+const PARENT_TRAVERSAL_PATTERN = /(?:^|\/)\.\.(?:\/|$)/u;
+
 function hasParentTraversal(value: string): boolean {
-  return value.replaceAll("\\", "/").split("/").includes("..");
+  return PARENT_TRAVERSAL_PATTERN.test(value.replaceAll("\\", "/"));
 }
 
 function canonicalPath(value: string): string {

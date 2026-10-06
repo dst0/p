@@ -33,3 +33,6 @@
 ## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
 **Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying file paths in `isSkippedWorkspaceEffectPath`) using `.split('/').some(...)` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
 **Action:** Replace `.split('/').some(...)` boundary checks with a pre-compiled regex with `(?:\/|^)` and `(?:\/|$)` boundaries. Also, correctly escape regex literals (e.g., `.` or `?`) when building patterns dynamically from static strings using `str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")`.
+## 2024-05-18 - Pre-compiled regex avoids array allocations from .split('/')
+**Learning:** Checking for boundary characters inside a tight string-matching loop (such as verifying path segments with `.includes("..")` or `.some(...)`) using `.split('/')` allocates an intermediate array and multiple substring instances on every path check. Using a single precompiled regex with bounded segments is cleaner and faster.
+**Action:** Replace `.split('/').some(...)` and `.split('/').includes(...)` boundary checks with a pre-compiled regex using `(?:\/|^)` and `(?:\/|$)` boundaries.
