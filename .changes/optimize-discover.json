@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "type": "None",
+  "reason": "Optimize string character counting in file discovery",
+  "packages": ["coding-agent"]
+}
