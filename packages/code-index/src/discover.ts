@@ -167,8 +167,18 @@ export function discoverFilesWithOptions(repoPath: string, options: DiscoverFile
         if (preview.includes(0)) return false;
 
         const text = preview.toString("utf-8");
-        const replacementCharacters = [...text].filter((character) => character === "�").length;
-        return text.trim().length > 0 && replacementCharacters <= Math.max(1, text.length * 0.01);
+        if (text.trim().length === 0) return false;
+
+        const maxAllowed = Math.max(1, text.length * 0.01);
+        let replacementCharacters = 0;
+        let pos = text.indexOf("\ufffd");
+        while (pos !== -1) {
+          replacementCharacters++;
+          if (replacementCharacters > maxAllowed) return false;
+          pos = text.indexOf("\ufffd", pos + 1);
+        }
+
+        return true;
       } catch {
         return false;
       }
