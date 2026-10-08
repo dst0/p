@@ -137,22 +137,23 @@ export type { TaskVerificationMode } from "./task-verification/mode.ts";
 export type * from "./tool-effects.ts";
 export type { Tool } from "./tools/index.ts";
 export {
-  withFileMutationQueue,
   createAskUserTool,
+  createBashTool,
   createCodingTools,
   createConfirmUserTool,
-  createReadOnlyTools,
-  createReadTool,
-  createBashTool,
   createEditTool,
-  createWriteTool,
-  createGrepTool,
   createFindTool,
+  createGrepTool,
   createLsTool,
   createProcessTool,
+  createReadOnlyTools,
+  createReadTool,
   createSleepTool,
   createSubmitPlanTool,
+  createWriteTool,
+  withFileMutationQueue,
 };
+
 function getDefaultAgentDir(): string {
   return getAgentDir();
 }

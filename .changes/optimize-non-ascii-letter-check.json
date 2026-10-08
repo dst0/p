@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "type": "None",
+  "reason": "Optimize string iteration checking for non-ASCII letters in compiler scope.",
+  "packages": ["coding-agent"]
+}
