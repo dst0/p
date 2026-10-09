@@ -262,11 +262,20 @@ export function describeToolCall(toolName: string, args: unknown): string {
 }
 
 export function summarizeOutput(content: AfterToolCallContext["result"]["content"]): string {
-  const value = content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  let joinedText = "";
+  let isFirst = true;
+
+  // ⚡ Bolt: Explicit for-loop with string accumulator instead of .filter().map().join(" ") to reduce GC pressure
+  for (const part of content) {
+    if (part.type === "text") {
+      if (!isFirst) {
+        joinedText += " ";
+      }
+      joinedText += part.text;
+      isFirst = false;
+    }
+  }
+
+  const value = joinedText.replace(/\s+/g, " ").trim();
   return value.length <= 500 ? value : `${value.slice(0, 499).trimEnd()}…`;
 }
