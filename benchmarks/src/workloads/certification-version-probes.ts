@@ -73,6 +73,11 @@ export async function verifyCertifiedCandidateVersions(
     if (hashFile(executable.path) !== executable.sha256) {
       throw new Error(`Frozen ${agent} executable changed before certified version probe`);
     }
+    const probe = agent === "kilo" && executable.versionProbe ? executable.versionProbe : executable;
+    if (probe.path !== executable.path) assertCandidateExecutableSafety(probe.path);
+    if (hashFile(probe.path) !== probe.sha256) {
+      throw new Error(`Frozen ${agent} version probe executable changed before certified verification`);
+    }
     const scratch = mkdtempSync(join(tmpdir(), `p-certified-${agent}-version-`));
     try {
       const probeWorkspace = join(scratch, "workspace");
@@ -94,7 +99,7 @@ export async function verifyCertifiedCandidateVersions(
           networkHosts: [],
           allowProcessFork: false,
         },
-        executable.path,
+        probe.path,
         ["--version"],
       );
       const version = await runBoundedVersionCommand(command, probeWorkspace, probeEnv);
@@ -103,6 +108,9 @@ export async function verifyCertifiedCandidateVersions(
       }
       if (hashFile(executable.path) !== executable.sha256) {
         throw new Error(`Frozen ${agent} executable changed during certified version probe`);
+      }
+      if (hashFile(probe.path) !== probe.sha256) {
+        throw new Error(`Frozen ${agent} version probe executable changed during certified verification`);
       }
     } finally {
       rmSync(scratch, { recursive: true, force: true });

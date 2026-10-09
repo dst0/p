@@ -1,0 +1,10 @@
+# 2026-10-09 — Kilo version verification needs its packaged executable
+
+- **Status:** Resolved locally; certified full-matrix outcome remains unverified.
+- **Symptom:** A fresh certified P/Pi/Kilo benchmark stopped before its first cell with `Certified version probe failed or timed out (exit=1, timeout=false)`.
+- **Decisive evidence:** The frozen Pi 0.86.1 executable passed its sandboxed probe. Kilo 7.7.5's `bin/kilo` wrapper returned `spawn EPERM` because it launches a co-located `.kilo` executable while version probes forbid process forking. A bounded reproduction ran the frozen `.kilo` directly under the same fork-denied, network-denied sandbox and received `7.7.5`.
+- **Root cause:** The version probe treated all candidate entrypoints as single processes. Kilo's packaged wrapper has a child-process bootstrap even for `--version`.
+- **Rejected approach:** Allowing `process-fork` for the Kilo version probe made the command pass, but needlessly widened the probe's authority and complicated proof that detached descendants cannot survive cleanup.
+- **Fix:** Bind the co-located `.kilo` companion's path and hash when the frozen Kilo wrapper is bound, then probe that exact file after checking its file identity and bound hash. Recheck both wrapper and companion hashes before publication. Keep the sandbox's fork denial. If the companion is absent, use the bound entrypoint and fail closed if it needs forking.
+- **Regression:** `certification-version-probe-process-lifecycle.test.ts` failed before the fix, then passed. Its companion fixture proves that the wrapper is not needed for the probe, that the direct executable cannot read outside its sandbox or spawn a child, and that a companion changed after binding is rejected before execution.
+- **Follow-up:** Complete the real 36-cell certified matrix and inspect raw model/quality evidence before any comparative or release claim. If Kilo changes its packaging layout, review the frozen executable selection rather than granting ambient fork rights.

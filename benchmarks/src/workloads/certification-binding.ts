@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { hashRuntimeSnapshot, hashSnapshotDirectory } from "../harness/runtime-snapshot.ts";
 import type { CertifiedInstructionReceipt } from "./certification-preflight.ts";
 
@@ -9,6 +9,7 @@ export interface CertifiedExecutableBinding {
   path: string;
   version: string;
   sha256: string;
+  versionProbe?: { path: string; sha256: string };
 }
 
 export interface CertifiedHarnessBinding {
@@ -71,7 +72,13 @@ function bindExecutable(
   if (!sha256 || sha256 === ZERO_HASH) {
     throw new Error(`Invalid ${defaultName} executable hash placeholder`);
   }
-  return { path: binaryPath, version, sha256 };
+  const companion = defaultName === "kilo" ? join(dirname(binaryPath), ".kilo") : undefined;
+  return {
+    path: binaryPath,
+    version,
+    sha256,
+    ...(companion && existsSync(companion) ? { versionProbe: { path: companion, sha256: hashFile(companion) } } : {}),
+  };
 }
 
 export function bindCertifiedHarness(inputs: CertifiedHarnessInputs): CertifiedHarnessBinding {
@@ -188,6 +195,9 @@ export function recheckCertifiedHarness(
   }
   if (binding.kilo.sha256 === ZERO_HASH || hashFile(binding.kilo.path) !== binding.kilo.sha256) {
     throw new Error("Kilo executable binary changed before certification publishing");
+  }
+  if (binding.kilo.versionProbe && hashFile(binding.kilo.versionProbe.path) !== binding.kilo.versionProbe.sha256) {
+    throw new Error("Kilo version probe executable changed before certification publishing");
   }
   if (
     binding.projectInstructions.sha256 === ZERO_HASH ||

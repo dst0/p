@@ -86,3 +86,87 @@ test(
     }
   },
 );
+
+test(
+  "certified Kilo version probe runs its frozen companion without forking",
+  { skip: process.platform !== "darwin" },
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "certified-kilo-version-child-"));
+    try {
+      const runtime = join(root, "runtime");
+      mkdirSync(runtime);
+      writeFileSync(join(runtime, "package.json"), JSON.stringify({ version: "5.0.2" }));
+      const pi = join(runtime, "pi");
+      writeFileSync(pi, "#!/bin/sh\nprintf '1.0.0\\n'\n");
+      chmodSync(pi, 0o755);
+      const kilo = join(runtime, "kilo");
+      const inner = join(runtime, ".kilo");
+      const outside = join(root, "outside-private-data");
+      writeFileSync(outside, "test-only value\n");
+      writeFileSync(
+        inner,
+        [
+          "#!/usr/bin/env node",
+          'const { readFileSync } = require("node:fs");',
+          'const { spawnSync } = require("node:child_process");',
+          `try { readFileSync(${JSON.stringify(outside)}); process.exit(13); } catch {}`,
+          'const child = spawnSync(process.execPath, ["-e", "process.exit(0)"]);',
+          'if (child.error?.code !== "EPERM") process.exit(14);',
+          "process.stdout.write('2.0.0\\n');",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(inner, 0o755);
+      writeFileSync(
+        kilo,
+        [
+          "#!/usr/bin/env node",
+          'const { spawnSync } = require("node:child_process");',
+          `const child = spawnSync(process.execPath, [${JSON.stringify(inner)}], { stdio: "inherit" });`,
+          "process.exit(child.status ?? 1);",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(kilo, 0o755);
+      const instructions = join(root, "AGENTS.md");
+      writeFileSync(instructions, "# Neutral instructions\n");
+      const binding = bindCertifiedHarness({
+        pSnapshotPath: runtime,
+        pSnapshotSha256: "a".repeat(64),
+        pVersion: "5.0.2",
+        piExecutable: pi,
+        piVersion: "1.0.0",
+        kiloExecutable: kilo,
+        kiloVersion: "2.0.0",
+        projectInstructionsFile: instructions,
+      });
+      const options = parseRunnerArgs([
+        "--certified",
+        "--model",
+        "surface/model",
+        "--expected-resolved-model",
+        "backend/model",
+        "--runs",
+        "3",
+        "--pi-executable",
+        pi,
+        "--pi-version",
+        "1.0.0",
+        "--kilo-executable",
+        kilo,
+        "--kilo-version",
+        "2.0.0",
+      ]);
+      options.candidateRuntimePath = runtime;
+
+      await verifyCertifiedCandidateVersions(options, binding);
+      writeFileSync(inner, "#!/usr/bin/env node\nprocess.stdout.write('2.0.0\\n');\n");
+      await assert.rejects(
+        verifyCertifiedCandidateVersions(options, binding),
+        /Frozen kilo version probe executable changed before certified verification/u,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

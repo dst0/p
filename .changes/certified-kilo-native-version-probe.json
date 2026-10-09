@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Verify Kilo's frozen packaged executable directly so certified version checks work without granting process forking."
+}
