@@ -1,1 +1,1 @@
-{"schemaVersion": 1, "type": "None", "packages": ["@dst0/p-agent", "@dst0/p"], "reason": "Optimize array allocations during text compaction"}
+{"schemaVersion": 1, "type": "None", "packages": ["agent", "coding-agent"], "reason": "Optimize array allocations during text compaction"}
