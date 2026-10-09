@@ -9,6 +9,7 @@ import * as contentRuntime from "../../../packages/coding-agent/dist/core/projec
 import * as compilerRuntime from "../../../packages/coding-agent/dist/core/project-instructions/model-compiler.js";
 import * as processorRuntime from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
 import * as controllerRuntime from "../../../packages/coding-agent/dist/core/project-instructions/session-controller.js";
+import * as configValueRuntime from "../../../packages/coding-agent/dist/core/resolve-config-value.js";
 import type * as authStorageSource from "../../../packages/coding-agent/src/core/auth-storage.ts";
 import type * as modelRegistrySource from "../../../packages/coding-agent/src/core/model-registry.ts";
 import type * as attemptDiagnosticsSource from "../../../packages/coding-agent/src/core/project-instructions/compiler-attempt-diagnostics.ts";
@@ -20,9 +21,11 @@ import type * as contentSource from "../../../packages/coding-agent/src/core/pro
 import type * as compilerSource from "../../../packages/coding-agent/src/core/project-instructions/model-compiler.ts";
 import type * as processorSource from "../../../packages/coding-agent/src/core/project-instructions/processor.ts";
 import type * as controllerSource from "../../../packages/coding-agent/src/core/project-instructions/session-controller.ts";
+import type * as configValueSource from "../../../packages/coding-agent/src/core/resolve-config-value.ts";
 
 const authStorage = authStorageRuntime as unknown as typeof authStorageSource;
 const modelRegistry = modelRegistryRuntime as unknown as typeof modelRegistrySource;
+const configValue = configValueRuntime as unknown as typeof configValueSource;
 const attemptDiagnostics = attemptDiagnosticsRuntime as unknown as typeof attemptDiagnosticsSource;
 const constraints = constraintsRuntime as unknown as typeof constraintsSource;
 const diagnostics = diagnosticsRuntime as unknown as typeof diagnosticsSource;
@@ -35,6 +38,7 @@ const controller = controllerRuntime as unknown as typeof controllerSource;
 
 export const AuthStorage = authStorage.AuthStorage;
 export const ModelRegistry = modelRegistry.ModelRegistry;
+export const resolveConfigValueUncached = configValue.resolveConfigValueUncached;
 export const getProjectInstructionCompilerFailureTelemetry =
   attemptDiagnostics.getProjectInstructionCompilerFailureTelemetry;
 export const buildProjectInstructionConstraints = constraints.buildProjectInstructionConstraints;

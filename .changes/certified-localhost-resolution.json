@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Allow certified Kilo runs to resolve localhost while keeping network access confined to the parent-owned proxy port."
+}

@@ -74,6 +74,7 @@ export function createBenchmarkSandboxProfile(
     "(allow mach-lookup)",
     ...Array.from(networkEndpoints).map((endpoint) => `(allow network-outbound (remote tcp ${quote(endpoint)}))`),
     "(allow file-read-metadata)",
+    '(allow file-read* (literal "/private/etc/hosts"))',
     ...readableSystemRoots.map((root) => `(allow file-read* (subpath ${quote(root)}))`),
     ...(configDir
       ? [`(allow file-read* (subpath ${quote(configDir)}))`, `(allow file-write* (subpath ${quote(configDir)}))`]

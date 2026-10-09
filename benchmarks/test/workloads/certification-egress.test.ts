@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,6 +60,85 @@ test(
     } finally {
       rmSync(root, { recursive: true, force: true });
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  },
+);
+
+test(
+  "certified sandbox resolves localhost for Node HTTP without broad network access",
+  { skip: !benchmarkSandboxExecutable() },
+  async () => {
+    const allowedServer = createServer((socket) => {
+      socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok", () => socket.destroy());
+    });
+    let forbiddenConnections = 0;
+    const forbiddenServer = createServer((socket) => {
+      forbiddenConnections += 1;
+      socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok", () => socket.destroy());
+    });
+    const root = mkdtempSync(join(tmpdir(), "certified-localhost-resolution-"));
+    try {
+      const listen = async (server: ReturnType<typeof createServer>): Promise<number> => {
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen({ host: "::1", port: 0, ipv6Only: true }, resolve);
+        });
+        const address = server.address();
+        assert.ok(address && typeof address !== "string");
+        return address.port;
+      };
+      const allowedPort = await listen(allowedServer);
+      const forbiddenPort = await listen(forbiddenServer);
+      const workspace = join(root, "workspace");
+      const runtime = join(root, "runtime");
+      mkdirSync(workspace);
+      mkdirSync(runtime);
+      const probe = join(workspace, "node-http-probe.js");
+      writeFileSync(
+        probe,
+        [
+          'import http from "node:http";',
+          "http.get(process.argv[2], (reply) => {",
+          "  reply.resume();",
+          '  reply.on("end", () => process.stdout.write(String(reply.statusCode)));',
+          '}).on("error", (error) => { console.error(error.message); process.exitCode = 1; });',
+        ].join("\n"),
+      );
+      const sandbox = benchmarkSandboxExecutable();
+      assert.ok(sandbox);
+      const profile = createBenchmarkSandboxProfile({ workspace, runtime, networkHosts: [`localhost:${allowedPort}`] });
+      const connect = async (port: number): Promise<{ code: number | null; stdout: string; stderr: string }> => {
+        const child = spawn(sandbox, ["-p", profile, process.execPath, probe, `http://localhost:${port}/v1`], {
+          cwd: workspace,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+          stdout += chunk;
+        });
+        child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+          stderr += chunk;
+        });
+        const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+        try {
+          const code = await new Promise<number | null>((resolve) => child.once("close", resolve));
+          return { code, stdout, stderr };
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      const allowed = await connect(allowedPort);
+      assert.equal(allowed.code, 0, allowed.stderr);
+      assert.equal(allowed.stdout, "200");
+      const forbidden = await connect(forbiddenPort);
+      assert.notEqual(forbidden.code, 0, "An undeclared loopback port must remain inaccessible");
+      assert.equal(forbiddenConnections, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      await Promise.all(
+        [allowedServer, forbiddenServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+      );
     }
   },
 );

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ts from "typescript";
+import { resolveConfigValueUncached } from "../project-instructions/coding-agent-runtime-bindings.ts";
 import type { RunnerOptions } from "../workloads/runner-options.ts";
 import { projectCertifiedKiloConfig, projectCertifiedPConfig } from "./certified-proxy-config-projection.ts";
 
@@ -196,7 +197,11 @@ export function readCertifiedProxyConfig(
   options: CertifiedProxyConfigOptions,
   dirs: Record<string, string>,
 ): CertifiedProxyConfig {
-  return loadConfigs(options, dirs).result;
+  const result = loadConfigs(options, dirs).result;
+  if (result.apiKey === undefined) return result;
+  const apiKey = resolveConfigValueUncached(result.apiKey);
+  if (!apiKey) return fail("Certified canonical API key could not be resolved");
+  return { ...result, apiKey };
 }
 
 function normalizeProxyUrl(value: string): string {
