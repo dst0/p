@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Make the subagent signal lifecycle regression independent of host process groups; shipped behavior is unchanged."
+}

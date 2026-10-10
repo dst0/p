@@ -80,13 +80,17 @@ describe("subagent child signal lifecycle", () => {
     expect(result.stderr).toMatch(/SIGTERM/);
   });
 
-  it("force-kills a child that ignores SIGTERM and clears the escalation timer", async () => {
+  it("force-kills a child that ignores SIGTERM", async () => {
     vi.useFakeTimers();
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    });
     const child = createChild();
     spawnMock.mockReturnValue(child);
     const controller = new AbortController();
     const resultPromise = run(controller.signal);
-    const rejection = expect(resultPromise).rejects.toThrow(/aborted/iu);
+    const rejection = resultPromise.catch((error: unknown) => error);
 
     controller.abort();
     await vi.advanceTimersByTimeAsync(5_001);
@@ -96,9 +100,30 @@ describe("subagent child signal lifecycle", () => {
     } finally {
       if (child.kill.mock.calls.length < 2) child.emit("close", null, "SIGTERM");
     }
-    await rejection;
+    await expect(rejection).resolves.toMatchObject({ message: expect.stringMatching(/aborted/iu) });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(child.kill).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the escalation timer when an aborted child closes before grace", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    });
+    const child = createChild();
+    spawnMock.mockReturnValue(child);
+    const controller = new AbortController();
+    const rejection = run(controller.signal).catch((error: unknown) => error);
+
+    controller.abort();
+    expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+    child.emit("close", null, "SIGTERM");
+    await expect(rejection).resolves.toMatchObject({ message: expect.stringMatching(/aborted/iu) });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5_001);
+    expect(child.kill).toHaveBeenCalledTimes(1);
   });
 
   it("terminates the complete process tree on Windows", async () => {
@@ -140,6 +165,7 @@ describe("subagent child signal lifecycle", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
     child.emit("close", null, "SIGTERM");
     await vi.advanceTimersByTimeAsync(6_001);
+    expect(child.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
     await rejection;
   });
 

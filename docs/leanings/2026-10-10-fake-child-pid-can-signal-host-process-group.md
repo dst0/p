@@ -1,0 +1,22 @@
+# 2026-10-10 — Fake child PID can signal a host process group
+
+- **Status:** Resolved
+- **Task/context:** Validate the certified benchmark proxy branch with the full workspace test suite.
+- **Unexpected observation or failure:** The subagent signal lifecycle test failed in the full suite because the fake child's `kill` mock was never called, while a focused rerun passed.
+- **Evidence:** The full run reported 1 failed and 5,064 passed coding-agent tests; the failing assertion expected `SIGTERM` on `child.kill` but observed zero calls. The test used fixed PID 123, and the production runner first calls `process.kill(-pid, signal)` on POSIX. A focused rerun passed, demonstrating host-dependent behavior.
+- **Approaches tried:**
+  - **Attempt:** Rerun the unchanged focused test.
+    - **Outcome:** Did not work.
+    - **Why:** It passed and therefore did not isolate the full-suite failure.
+  - **Attempt:** Remove the fake PID to force direct child signaling.
+    - **Outcome:** Rejected.
+    - **Why:** It would bypass the process-group fallback path the test is meant to verify.
+  - **Attempt:** Stub POSIX process-group calls to report `ESRCH`.
+    - **Outcome:** Worked.
+    - **Why:** It deterministically exercises fallback to `child.kill` without signaling a real host process group.
+- **Root cause:** A unit-test fixture with a fixed PID allowed real process-group signals and liveness probes, making the asserted branch depend on unrelated host state.
+- **Resolution:** Stub `process.kill` and pin the platform in the fake-child test; attach the rejection handler immediately so intermediate assertions cannot leave a pending Vitest expectation.
+- **Verification:** The focused signal test passed 8/8, `npm run check` exited 0, and the one-worker full `./test.sh` rerun exited 0 (coding-agent 5,066 passed/50 skipped; benchmark 543 passed; scripts 192 passed; release audit 85 passed).
+- **Prevention/follow-up:** The test asserts both escalation signals and timer cleanup. `AGENTS.md` now forbids real process-group signaling from fake child fixtures.
+- **Reusable learning:** A fake process object must also fake every OS-level process operation its PID enables.
+- **References:** `packages/coding-agent/test/subagent-runner-signals.test.ts`, `packages/coding-agent/examples/extensions/subagent/runner.ts`.
