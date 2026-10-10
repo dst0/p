@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { benchmarkSandboxExecutable, createBenchmarkSandboxProfile } from "../../src/harness/benchmark-isolation.ts";
 import { validateBenchmarkRuntimeInputs } from "../../src/workloads/benchmark-runtime-validation.ts";
 import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
+import { hasIpv6Loopback } from "../harness/ipv6-loopback.ts";
 
 test("certified sandbox grants only the declared loopback endpoint", () => {
   const root = mkdtempSync(join(tmpdir(), "certified-egress-"));
@@ -25,6 +26,12 @@ test("certified sandbox grants only the declared loopback endpoint", () => {
     assert.match(profile, /network-outbound.*localhost:443/u);
     assert.equal(profile.includes('"*:443"'), false);
     assert.equal(profile.includes("exfiltration.example.test"), false);
+    const ipv4Profile = createBenchmarkSandboxProfile({ workspace, runtime, networkHosts: ["127.0.0.1:443"] });
+    assert.match(ipv4Profile, /network-outbound.*localhost:443/u);
+    assert.throws(
+      () => createBenchmarkSandboxProfile({ workspace, runtime, networkHosts: ["127.0.0.2:443"] }),
+      /Invalid certified network host/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -54,7 +61,7 @@ test(
           timeout: 5_000,
         });
       };
-      const allowed = connect([`localhost:${port}`]);
+      const allowed = connect([`127.0.0.1:${port}`]);
       assert.equal(allowed.status, 0, allowed.stderr);
       assert.throws(() => connect([`gateway.example.test:${port}`]), /Invalid certified network host/u);
     } finally {
@@ -67,7 +74,8 @@ test(
 test(
   "certified sandbox resolves localhost for Node HTTP without broad network access",
   { skip: !benchmarkSandboxExecutable() },
-  async () => {
+  async (context) => {
+    if (!(await hasIpv6Loopback())) return context.skip("IPv6 loopback is unavailable on this host");
     const allowedServer = createServer((socket) => {
       socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok", () => socket.destroy());
     });

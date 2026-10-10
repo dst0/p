@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   type ClientRequest,
-  createServer,
   request as httpRequest,
   type IncomingMessage,
   type Server,
@@ -9,7 +8,7 @@ import {
 } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { verifiedCertifiedProxyCa } from "./certified-proxy-ca.ts";
-import { closeCertifiedProxyServer, listenCertifiedProxyServer } from "./certified-proxy-listeners.ts";
+import { closeCertifiedProxyServer, openCertifiedProxyLoopbacks } from "./certified-proxy-listeners.ts";
 import { createCertifiedResponseModelCollector } from "./certified-proxy-response-models.ts";
 
 export interface CertifiedEgressProxyOptions {
@@ -50,7 +49,7 @@ export class CertifiedEgressProxy {
   private closed = false;
   constructor(options: CertifiedEgressProxyOptions, port: number, servers: Server[]) {
     this.upstream = new URL(options.upstreamBaseUrl);
-    this.baseUrl = `http://localhost:${port}${this.upstream.pathname.replace(/\/$/u, "")}`;
+    this.baseUrl = `http://${servers.length > 1 ? "localhost" : "127.0.0.1"}:${port}${this.upstream.pathname.replace(/\/$/u, "")}`;
     this.servers = servers;
     this.apiKey = options.apiKey;
     this.expectedModel = options.expectedModel;
@@ -276,25 +275,15 @@ export async function startCertifiedEgressProxy(options: CertifiedEgressProxyOpt
   ) {
     throw new Error("Invalid certified proxy upstream configuration");
   }
-  const servers: Server[] = [];
   let proxy: CertifiedEgressProxy | undefined;
-  try {
-    const handler = (request: IncomingMessage, reply: ServerResponse) => {
+  const { port, servers } = await openCertifiedProxyLoopbacks(
+    (request, reply) => {
       if (proxy) return proxy.handle(request, reply);
       reply.writeHead(503).end();
-    };
-    const ipv4 = createServer({ headersTimeout: requestTimeoutMillis, requestTimeout: requestTimeoutMillis }, handler);
-    ipv4.maxConnections = maxConcurrentRequests * 2;
-    servers.push(ipv4);
-    const port = await listenCertifiedProxyServer(ipv4, "127.0.0.1", 0);
-    const ipv6 = createServer({ headersTimeout: requestTimeoutMillis, requestTimeout: requestTimeoutMillis }, handler);
-    ipv6.maxConnections = maxConcurrentRequests * 2;
-    servers.push(ipv6);
-    await listenCertifiedProxyServer(ipv6, "::1", port);
-    proxy = new CertifiedEgressProxy(options, port, servers);
-    return proxy;
-  } catch (error) {
-    await Promise.allSettled(servers.filter((server) => server.listening).map(closeCertifiedProxyServer));
-    throw error;
-  }
+    },
+    requestTimeoutMillis,
+    maxConcurrentRequests * 2,
+  );
+  proxy = new CertifiedEgressProxy(options, port, servers);
+  return proxy;
 }

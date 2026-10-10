@@ -6,7 +6,7 @@ export function validateBenchmarkRuntimeInputs(options: RunnerOptions): void {
     throw new Error("Certified network access is reserved for the parent-owned proxy; omit manual hosts");
   }
   for (const host of options.certifiedNetworkHosts ?? []) {
-    const match = /^localhost:([1-9][0-9]{0,4})$/u.exec(host);
+    const match = /^(?:localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$/u.exec(host);
     if (!match || Number(match[1]) > 65_535) {
       throw new Error(`Invalid certified network host: ${host}`);
     }

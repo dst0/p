@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
 import { test } from "node:test";
 import { startCertifiedEgressProxy } from "../../src/harness/certified-egress-proxy.ts";
+import { hasIpv6Loopback } from "./ipv6-loopback.ts";
 
 const model = "mini-pc/sokann-qwen-27b-cache";
 
@@ -155,7 +156,8 @@ test("certified proxy rejects requests beyond its active forwarding limit", asyn
   }
 });
 
-test("certified proxy frees aggregate body budget after rejecting overflow across loopbacks", async () => {
+test("certified proxy frees aggregate body budget after rejecting overflow across loopbacks", async (context) => {
+  if (!(await hasIpv6Loopback())) return context.skip("IPv6 loopback is unavailable on this host");
   let upstreamRequests = 0;
   let announceSecond: (() => void) | undefined;
   let announceThird: (() => void) | undefined;
@@ -181,7 +183,7 @@ test("certified proxy frees aggregate body budget after rejecting overflow acros
   let held: Promise<Response | undefined>[] = [];
   try {
     proxy.beginCell("aggregate-body-limit");
-    held = [proxy.baseUrl, proxy.baseUrl.replace("localhost", "[::1]")].map((url) =>
+    held = [proxy.baseUrl, proxy.baseUrl.replace(/localhost|127\.0\.0\.1/u, "[::1]")].map((url) =>
       fetch(`${url}/chat/completions`, { method: "POST", body: largeBody }).catch(() => undefined),
     );
     await within(secondForwarded, "Proxy did not admit the aggregate body budget", 5_000);

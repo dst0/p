@@ -213,7 +213,7 @@ function normalizeProxyUrl(value: string): string {
   }
   if (
     url.protocol !== "http:" ||
-    url.hostname !== "localhost" ||
+    !["localhost", "127.0.0.1"].includes(url.hostname) ||
     url.username ||
     url.password ||
     url.search ||

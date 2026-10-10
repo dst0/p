@@ -61,6 +61,20 @@ test("unsafe proxy endpoints leave all private configurations unchanged", () => 
   }
 });
 
+test("an IPv4 loopback proxy endpoint rewrites all three private configurations", () => {
+  const fixture = makeDirectories();
+  try {
+    rewriteCertifiedAgentConfigs(options, fixture.dirs, "http://127.0.0.1:43210/v1");
+    const [p, pi, kilo] = copiedConfigs(fixture.dirs).map((path) => readJsonc(path));
+    const pBaseUrl = record(record(p.providers).compiler).baseUrl;
+    const piBaseUrl = record(record(pi.providers).compiler).baseUrl;
+    const kiloBaseUrl = record(record(record(kilo.provider)["kilo-provider"]).options).baseURL;
+    assert.deepEqual([pBaseUrl, piBaseUrl, kiloBaseUrl], Array(3).fill("http://127.0.0.1:43210/v1"));
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("malformed selected model metadata fails before any private configuration rewrite", () => {
   for (const [field, value] of [
     ["reasoning", "yes"],

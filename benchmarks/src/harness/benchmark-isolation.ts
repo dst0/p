@@ -57,7 +57,7 @@ export function createBenchmarkSandboxProfile(
   }
   const networkEndpoints = new Set(paths.networkHosts ?? []);
   for (const endpoint of networkEndpoints) {
-    const match = /^localhost:([1-9][0-9]{0,4})$/u.exec(endpoint);
+    const match = /^(?:localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$/u.exec(endpoint);
     if (!match || Number(match[1]) > 65_535) {
       throw new Error(`Invalid certified network host: ${endpoint}`);
     }
@@ -72,7 +72,9 @@ export function createBenchmarkSandboxProfile(
     "(allow signal (target self))",
     "(allow sysctl-read)",
     "(allow mach-lookup)",
-    ...Array.from(networkEndpoints).map((endpoint) => `(allow network-outbound (remote tcp ${quote(endpoint)}))`),
+    ...Array.from(networkEndpoints).map(
+      (endpoint) => `(allow network-outbound (remote tcp ${quote(endpoint.replace(/^127\.0\.0\.1:/u, "localhost:"))}))`,
+    ),
     "(allow file-read-metadata)",
     '(allow file-read* (literal "/private/etc/hosts"))',
     ...readableSystemRoots.map((root) => `(allow file-read* (subpath ${quote(root)}))`),

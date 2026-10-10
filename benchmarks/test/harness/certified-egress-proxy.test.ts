@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { test } from "node:test";
 import { startCertifiedEgressProxy } from "../../src/harness/certified-egress-proxy.ts";
+import { hasIpv6Loopback } from "./ipv6-loopback.ts";
 
 const model = "mini-pc/sokann-qwen-27b-cache";
 
@@ -238,7 +239,8 @@ test("closing the proxy aborts and settles a stalled upstream completion", async
   }
 });
 
-test("IPv6 loopback carries a streamed SSE response with the expected model", async () => {
+test("IPv6 loopback carries a streamed SSE response with the expected model", async (context) => {
+  if (!(await hasIpv6Loopback())) return context.skip("IPv6 loopback is unavailable on this host");
   const upstream = createServer((_request, reply) => {
     reply.writeHead(200, { "content-type": "text/event-stream" });
     reply.write('data: {"mod');
@@ -251,7 +253,7 @@ test("IPv6 loopback carries a streamed SSE response with the expected model", as
   });
   try {
     proxy.beginCell("ipv6-split-sse");
-    const response = await fetch(`${proxy.baseUrl.replace("localhost", "[::1]")}/chat/completions`, {
+    const response = await fetch(`${proxy.baseUrl.replace(/localhost|127\.0\.0\.1/u, "[::1]")}/chat/completions`, {
       method: "POST",
       body: JSON.stringify({ model }),
     });
