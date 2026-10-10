@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import type { CertifiedEgressProxy, CertifiedProxyEvidence } from "../harness/certified-egress-proxy.ts";
 import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import { initializeBenchmarkWorkspaceRepository } from "../harness/workspace-repository.ts";
 import { createProjectInstructionTurnChallenge } from "../project-instructions/turn-authority.ts";
@@ -50,6 +51,7 @@ export interface CertifiedInstructionReceipt {
   responseMatched: boolean;
   responseModel?: string;
   responseModels?: string[];
+  proxyEvidence?: CertifiedProxyEvidence;
   elapsedMs: number;
   error?: string;
 }
@@ -110,6 +112,7 @@ export async function runCertifiedPreflights(
   receiptValue: string,
   binding: CertifiedHarnessBinding,
   runCommand: typeof runRecordedCommand = runRecordedCommand,
+  proxy?: CertifiedEgressProxy,
 ): Promise<CertifiedInstructionReceipt[]> {
   const receipts: CertifiedInstructionReceipt[] = [];
   const receiptSha256 = binding.projectInstructions.receiptSha256 ?? hashText(receiptValue);
@@ -128,9 +131,11 @@ export async function runCertifiedPreflights(
     let workspaceSafeToTraverse = true;
     let primaryError: unknown;
     let failed = false;
+    const proxyCell = `preflight:${agent}`;
     const cleanupErrors: unknown[] = [];
 
     try {
+      proxy?.beginCell(proxyCell);
       assertCertifiedOutputWritePath(join(workspace, "AGENTS.md"));
       copyFileSync(binding.projectInstructions.path, join(workspace, "AGENTS.md"));
       initializeBenchmarkWorkspaceRepository(workspace);
@@ -175,6 +180,7 @@ export async function runCertifiedPreflights(
       verifyWorkspaceInstructions(workspace, binding.projectInstructions.sha256);
 
       const metrics = parseRecording(turnResult.stdout, agent);
+      const proxyEvidence = proxy?.endCell(proxyCell);
       const expectedModel = options.expectedResolvedModel ?? (agent === "kilo" ? options.kiloModel : options.model);
       const observedModels = metrics.responseModels ?? [];
       const modelMatched =
@@ -197,6 +203,7 @@ export async function runCertifiedPreflights(
         responseMatched,
         responseModel: metrics.responseModel,
         responseModels: metrics.responseModels,
+        proxyEvidence,
         elapsedMs: turnResult.elapsedMs,
         ...(!passed
           ? {
@@ -214,6 +221,11 @@ export async function runCertifiedPreflights(
           : {}),
       });
     } catch (error) {
+      try {
+        proxy?.endCell(proxyCell);
+      } catch {
+        // Ending a rejected or incomplete cell clears its identity; the primary failure is preserved.
+      }
       primaryError = error;
       failed = true;
     } finally {

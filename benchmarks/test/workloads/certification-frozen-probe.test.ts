@@ -90,8 +90,8 @@ test("failed certified setup removes generated receipt instructions", { skip: pr
     ]);
 
     assert.throws(
-      () => setupCertifiedBenchmark(options, { p: "0.4.0", pi: "wrong", kilo: "2.0.0" }, repo, output),
-      /expected wrong/u,
+      () => setupCertifiedBenchmark(options, { p: "wrong", pi: "1.0.0", kilo: "2.0.0" }, repo, output),
+      /Candidate P version.*expected wrong/u,
     );
     assert.equal(existsSync(join(output, "instructions")), false);
   } finally {

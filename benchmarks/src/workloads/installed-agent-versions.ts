@@ -20,7 +20,7 @@ function executableVersion(executable: string): string {
 }
 
 export function resolveAgentVersions(options: RunnerOptions): AgentVersions {
-  if (options.piExecutable) {
+  if (options.piExecutable && !options.certified) {
     const installedPiVersion = executableVersion(options.piExecutable);
     if (installedPiVersion !== options.piVersion) {
       throw new Error(`Installed Pi version is ${installedPiVersion}; expected ${options.piVersion}`);
@@ -31,11 +31,15 @@ export function resolveAgentVersions(options: RunnerOptions): AgentVersions {
     p: packageVersion(resolve(dirname(options.pCli), "..", "package.json")),
   };
   if (options.agents.includes("kilo")) {
-    const installedKiloVersion = executableVersion(options.kiloExecutable ?? "kilo");
-    if (installedKiloVersion !== options.kiloVersion) {
-      throw new Error(`Installed Kilo version is ${installedKiloVersion}; expected ${options.kiloVersion}`);
+    if (options.certified) {
+      versions.kilo = options.kiloVersion;
+    } else {
+      const installedKiloVersion = executableVersion(options.kiloExecutable ?? "kilo");
+      if (installedKiloVersion !== options.kiloVersion) {
+        throw new Error(`Installed Kilo version is ${installedKiloVersion}; expected ${options.kiloVersion}`);
+      }
+      versions.kilo = installedKiloVersion;
     }
-    versions.kilo = installedKiloVersion;
   }
   if (options.agents.includes("codex")) versions.codex = executableVersion("codex");
   if (options.agents.includes("agy")) versions.agy = executableVersion("agy");

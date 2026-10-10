@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Prevent a permission-denied process-group liveness probe from hanging subagent cancellation."
+}

@@ -7,6 +7,7 @@ export interface BenchmarkIsolationPaths {
   configDir?: string;
   extraReadPaths?: readonly string[];
   networkHosts?: readonly string[];
+  allowProcessFork?: boolean;
 }
 
 export interface SandboxedBenchmarkCommand {
@@ -54,21 +55,28 @@ export function createBenchmarkSandboxProfile(
       extraLiterals.add(candidate);
     }
   }
-  const networkPorts = new Set(
-    (paths.networkHosts ?? []).map((endpoint) => endpoint.slice(endpoint.lastIndexOf(":") + 1)),
-  );
+  const networkEndpoints = new Set(paths.networkHosts ?? []);
+  for (const endpoint of networkEndpoints) {
+    const match = /^(?:localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$/u.exec(endpoint);
+    if (!match || Number(match[1]) > 65_535) {
+      throw new Error(`Invalid certified network host: ${endpoint}`);
+    }
+  }
 
   return [
     "(version 1)",
     "(deny default)",
     '(import "system.sb")',
     "(allow process-exec)",
-    "(allow process-fork)",
+    ...(paths.allowProcessFork === false ? [] : ["(allow process-fork)"]),
     "(allow signal (target self))",
     "(allow sysctl-read)",
     "(allow mach-lookup)",
-    ...Array.from(networkPorts).map((port) => `(allow network-outbound (remote tcp "*:${port}"))`),
+    ...Array.from(networkEndpoints).map(
+      (endpoint) => `(allow network-outbound (remote tcp ${quote(endpoint.replace(/^127\.0\.0\.1:/u, "localhost:"))}))`,
+    ),
     "(allow file-read-metadata)",
+    '(allow file-read* (literal "/private/etc/hosts"))',
     ...readableSystemRoots.map((root) => `(allow file-read* (subpath ${quote(root)}))`),
     ...(configDir
       ? [`(allow file-read* (subpath ${quote(configDir)}))`, `(allow file-write* (subpath ${quote(configDir)}))`]

@@ -2,13 +2,12 @@ import { existsSync } from "node:fs";
 import type { RunnerOptions } from "./runner-options.ts";
 
 export function validateBenchmarkRuntimeInputs(options: RunnerOptions): void {
-  if (options.certified && (options.certifiedNetworkHosts ?? []).length === 0) {
-    throw new Error("At least one certified network host is required via --certified-network-host");
+  if (options.certified && (options.certifiedNetworkHosts ?? []).length > 0) {
+    throw new Error("Certified network access is reserved for the parent-owned proxy; omit manual hosts");
   }
   for (const host of options.certifiedNetworkHosts ?? []) {
-    const match = /^([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::(\d{1,5}))?$/u.exec(host);
-    const port = match?.[2] ? Number(match[2]) : undefined;
-    if (!match || port === undefined || port === 0 || port > 65_535) {
+    const match = /^(?:localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$/u.exec(host);
+    if (!match || Number(match[1]) > 65_535) {
       throw new Error(`Invalid certified network host: ${host}`);
     }
   }

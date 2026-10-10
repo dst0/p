@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Allow the benchmark certification proxy to run on IPv4-only hosts while preserving loopback-only routing; this changes benchmark tooling, not the shipped agent runtime."
+}

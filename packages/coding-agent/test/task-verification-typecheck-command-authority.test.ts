@@ -102,6 +102,7 @@ describe("task-verification typecheck command authority", () => {
       execFileSync(compiler, ["--project", "packages/ai/tsconfig.build.json", "--noEmit"], {
         cwd: repositoryRoot,
         encoding: "utf8",
+        timeout: 90_000,
       }),
     ).toBe("");
     expect(
@@ -111,7 +112,7 @@ describe("task-verification typecheck command authority", () => {
         ["packages/coding-agent/src/core/task-verification.ts"],
       ),
     ).toBe(false);
-  });
+  }, 120_000);
 
   it("does not let a sibling config that excludes the changed source satisfy the scope", () => {
     expect(

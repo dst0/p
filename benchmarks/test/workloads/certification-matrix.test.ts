@@ -261,6 +261,12 @@ test("instruction parity fails closed on missing, mismatched, or failed receipts
     responseMatched: true,
     responseModel: "resolved/test-model",
     responseModels: ["resolved/test-model"],
+    proxyEvidence: {
+      requestCount: 1,
+      requestModels: ["resolved/test-model"],
+      responseModels: ["resolved/test-model"],
+      requestHashes: ["a".repeat(64)],
+    },
     elapsedMs: 50,
   }));
   const passedOutcome = evaluateCertification(complete, certifiedOptions, { ...mockBinding, receipts: passedReceipts });

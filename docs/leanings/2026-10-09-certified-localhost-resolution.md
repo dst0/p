@@ -1,0 +1,9 @@
+# 2026-10-09 — Certified Kilo needs local hosts resolution
+
+- **Status:** Local regression and fake-endpoint probe pass; the real certified matrix is still unverified.
+- **Symptom:** The certified 36-cell run passed version and model-resolution probes, then stopped before its first cell: Kilo's startup request reported `process=false response=false model=false` and `Cannot connect to API`.
+- **Decisive evidence:** With an isolated fake provider, Kilo inside the narrow macOS sandbox sent zero requests to the allowed local endpoint, while unsandboxed Kilo did. Bun `fetch()` and `nc` reached the same endpoint inside the sandbox, but Bun's `node:http` returned `getaddrinfo ENOTFOUND localhost`. A diagnostic sandbox with only read access to `/private/etc/hosts` allowed Kilo to reach the fake endpoint; the outbound network rule stayed port-specific. A broad network grant also worked but was rejected.
+- **Root cause:** Kilo's AI SDK uses a networking path that resolves `localhost` through the macOS hosts file. The candidate sandbox allowed the parent-owned proxy's TCP port but denied reading the hosts file, so name resolution failed before the connection.
+- **Fix:** Grant read access to the single canonical `/private/etc/hosts` file. Do not grant `/private/etc` broadly, DNS egress, or arbitrary loopback ports.
+- **Regression:** `certification-egress.test.ts` reproduced `ENOTFOUND localhost` before the fix, then passed with a real sandboxed `node:http` request. The same test confirms a second, undeclared live loopback port remains unreachable. The fake Kilo request probe also reached only the allowed endpoint after the fix.
+- **Follow-up:** Re-run certified startup and the full 36-cell matrix with raw wire/model/quality evidence. Keep the fake diagnostic independent of real provider credentials.

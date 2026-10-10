@@ -46,6 +46,12 @@ export function createSyntheticCertifiedMatrix(options: SyntheticRowOptions = {}
           exitCode: 0,
           timedOut: false,
           nudges,
+          proxyEvidence: {
+            requestCount: 1,
+            requestModels: [model],
+            responseModels: [model],
+            requestHashes: ["a".repeat(64)],
+          },
           metrics: {
             usage: {
               input: Math.floor(tokens / 2),
