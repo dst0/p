@@ -247,9 +247,13 @@ function directTestInvocation(words: readonly string[]): TestCommandInvocation |
 function packageManagerTestInvocation(executable: string, words: readonly string[]): TestCommandInvocation | undefined {
   const index = packageSubcommandIndex(words, PACKAGE_OPTIONS_WITH_VALUE);
   const command = words[index];
-  const scopeNarrowed = words
-    .slice(1, index)
-    .some((word) => [...PACKAGE_SCOPE_OPTIONS].some((option) => word === option || word.startsWith(`${option}=`)));
+  const scopeNarrowed = words.slice(1, index).some((word) => {
+    // Optimization: explicit for-loop avoids [...Set] allocation overhead
+    for (const option of PACKAGE_SCOPE_OPTIONS) {
+      if (word === option || word.startsWith(`${option}=`)) return true;
+    }
+    return false;
+  });
   if (command === "test") {
     return {
       args: packageRunnerArgs(words.slice(index + 1)),
