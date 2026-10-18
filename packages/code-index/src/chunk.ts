@@ -156,9 +156,14 @@ function chunkBySymbols(
   // Find raw symbol boundaries, then backtrack each over leading comments/JSDoc
   const rawBoundaries = [0];
 
+  // Track newline offsets once rather than rescanning each prefix for every symbol.
+  let scannedOffset = 0;
+  let lineIndex = 0;
   const matches = content.matchAll(pattern);
   for (const match of matches) {
-    const lineIndex = content.slice(0, match.index).split("\n").length - 1;
+    for (; scannedOffset < match.index; scannedOffset++) {
+      if (content.charCodeAt(scannedOffset) === 10) lineIndex++;
+    }
     if (lineIndex > 0 && lineIndex < totalLines) {
       rawBoundaries.push(lineIndex);
     }

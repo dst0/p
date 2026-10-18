@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "coding-agent"
+  ],
+  "type": "Fixed",
+  "summary": "Avoid quadratic file-prefix rescanning when indexing code with many symbol declarations."
+}

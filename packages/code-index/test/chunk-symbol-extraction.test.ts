@@ -132,4 +132,32 @@ describe("code chunking and multi-language symbol extraction", () => {
     expect(chunks[0].symbol).toBe("def handle");
     expect(chunks[0].text).toContain("# Controller doc");
   });
+  it("preserves exact symbol boundaries with CRLF, unicode, and consecutive declarations", () => {
+    const source = [
+      "const first = 1;",
+      "// comment for second",
+      "export function second() { return \"😀\"; }",
+      "const third = 3;",
+    ].join("\r\n");
+    const chunks = chunkFile(source, "typescript", 80, 300);
+    expect(chunks.map((chunk) => [chunk.startLine, chunk.endLine, chunk.symbol])).toEqual([
+      [1, 1, "const first"],
+      [2, 3, "function second"],
+      [4, 4, "const third"],
+    ]);
+    expect(chunks.map((chunk) => chunk.text).join("\n").replaceAll("\r", "")).toBe(source.replaceAll("\r", ""));
+  });
+
+  it("scales to 20,000 densely packed declarations without rescanning prefixes", () => {
+    const count = 20_000;
+    const source = Array.from({ length: count }, (_, index) => `export function f${index}() {}`).join("\n");
+    const startedAt = performance.now();
+    const chunks = chunkFile(source, "typescript", 80, 300);
+    const elapsedMs = performance.now() - startedAt;
+    expect(chunks).toHaveLength(count);
+    expect(chunks[0]).toMatchObject({ startLine: 1, endLine: 1, symbol: "function f0" });
+    expect(chunks.at(-1)).toMatchObject({ startLine: count, endLine: count, symbol: `function f${count - 1}` });
+    expect(elapsedMs).toBeLessThan(4_000);
+  });
+
 });
