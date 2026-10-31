@@ -57,6 +57,7 @@
 ## Test Quality & Adversarial Review
 
 - Tests must never be added solely as mechanical line-fillers to pass coverage gates (`scripts/check-changed-coverage.js`). Tests must meaningfully verify domain logic, invariant preservation, realistic crash recovery, positive cases, negative cases, and edge cases.
+- A mocked `process.exit` must throw a sentinel error, never be a no-op, so the code under test stops like a real exit. Tests must not leave unawaited work behind: a promise started in a constructor (for example the Qdrant client's version check, disabled for `packages/code-index` tests by `test/setup-qdrant-client-without-version-check.ts`) can write to the console after the test and its spies are gone, which fails CI as `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was pending`.
 - Successful-state fixtures must use canonical runtime types and supported effect domains. Reserve deliberately invalid metadata for explicit rejection tests; never cast it into a success or freshness fixture merely to reach a branch.
 - Never create generic, catch-all, or branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
 - Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.

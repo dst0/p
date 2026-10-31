@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Test-only: stop code-index tests from leaking a late Qdrant version-check warning into Vitest teardown, which made CI fail intermittently."
+}

@@ -5,6 +5,7 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000,
+		setupFiles: ["./test/setup-qdrant-client-without-version-check.ts"],
 		coverage: {
 			provider: "v8",
 			reporter: ["text-summary", "lcov", "json-summary"],
