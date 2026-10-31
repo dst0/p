@@ -19,6 +19,13 @@ export class WarningSettingsSubmenu extends Container {
         currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
         values: ["true", "false"],
       },
+      {
+        id: "terminal-new-line",
+        label: "Terminal new-line hint",
+        description: "Explain how to insert a new line when the terminal cannot report Shift+Enter",
+        currentValue: (this.state.terminalNewLine ?? true) ? "true" : "false",
+        values: ["true", "false"],
+      },
     ];
 
     this.settingsList = new SettingsList(
@@ -29,6 +36,10 @@ export class WarningSettingsSubmenu extends Container {
         switch (id) {
           case "anthropic-extra-usage":
             this.state = { ...this.state, anthropicExtraUsage: newValue === "true" };
+            onChange({ ...this.state });
+            break;
+          case "terminal-new-line":
+            this.state = { ...this.state, terminalNewLine: newValue === "true" };
             onChange({ ...this.state });
             break;
         }

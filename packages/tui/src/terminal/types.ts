@@ -27,6 +27,13 @@ export interface Terminal {
   // Whether Kitty keyboard protocol is active
   get kittyProtocolActive(): boolean;
 
+  /**
+   * Resolve once the startup keyboard-protocol query was answered (Kitty flags or device attributes),
+   * so `kittyProtocolActive` is final. Resolves false when the terminal stays silent for `timeoutMs`.
+   * Never delays startup and never keeps the process alive. Omitted by terminals that do not negotiate.
+   */
+  waitForKeyboardProtocolNegotiation?(timeoutMs: number): Promise<boolean>;
+
   // Cursor positioning (relative to current position)
   moveBy(lines: number): void; // Move cursor up (negative) or down (positive) by N lines
 

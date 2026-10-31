@@ -24,6 +24,7 @@ import {
   do_setKeyboardProtocolNegotiationBuffer,
   do_setupStdinBuffer,
   do_start,
+  do_waitForKeyboardProtocolNegotiation,
 } from "./processterminal-methods/keyboard-protocol.ts";
 import {
   do_disableModifyOtherKeys,
@@ -48,6 +49,10 @@ export class ProcessTerminal implements Terminal {
   public _modifyOtherKeysActive = false;
 
   public keyboardProtocolPushed = false;
+
+  public keyboardProtocolNegotiationSettled = false;
+
+  public keyboardProtocolNegotiationWaiters: Array<() => void> = [];
 
   public keyboardProtocolNegotiationBuffer = "";
 
@@ -102,6 +107,10 @@ export class ProcessTerminal implements Terminal {
 
   queryAndEnableKittyProtocol(): void {
     do_queryAndEnableKittyProtocol(this);
+  }
+
+  waitForKeyboardProtocolNegotiation(timeoutMs: number): Promise<boolean> {
+    return do_waitForKeyboardProtocolNegotiation(this, timeoutMs);
   }
 
   handleKeyboardProtocolNegotiationSequence(

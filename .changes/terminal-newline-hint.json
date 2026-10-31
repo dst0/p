@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent", "tui"],
+  "type": "Added",
+  "summary": "Print a one-per-start notice when the terminal reports no kitty keyboard protocol and Shift+Enter may submit instead of adding a new line, naming the configured new-line key, the Ctrl+J and backslash-then-Enter fallbacks and the WezTerm/iTerm2 fix (silence with `warnings.terminalNewLine`); the TUI `Terminal` interface gains an optional `waitForKeyboardProtocolNegotiation()`."
+}

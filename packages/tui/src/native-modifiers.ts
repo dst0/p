@@ -48,6 +48,10 @@ function loadNativeModifiersHelper(): NativeModifiersHelper | undefined {
   return undefined;
 }
 
+export function isNativeModifiersHelperAvailable(): boolean {
+  return loadNativeModifiersHelper() !== undefined;
+}
+
 export function isNativeModifierPressed(key: ModifierKey): boolean {
   const helper = loadNativeModifiersHelper();
   if (!helper) return false;
@@ -59,6 +63,9 @@ export function isNativeModifierPressed(key: ModifierKey): boolean {
 }
 
 export const _test_isNativeModifiersHelper = isNativeModifiersHelper;
+export function _test_setNativeModifiersHelper(helper: NativeModifiersHelper | null) {
+  nativeModifiersHelper = helper;
+}
 export const _test_loadNativeModifiersHelper = loadNativeModifiersHelper;
 export function _test_resetNativeModifiersHelper() {
   nativeModifiersHelper = undefined;

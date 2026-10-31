@@ -80,8 +80,36 @@ export function do_queryAndEnableKittyProtocol(self: ProcessTerminal): void {
   self.setupStdinBuffer();
   process.stdin.on("data", self.stdinDataHandler!);
   self.keyboardProtocolPushed = true;
+  // Each query starts a new negotiation (start() runs again after suspend or an external editor).
+  self.keyboardProtocolNegotiationSettled = false;
   self.clearKeyboardProtocolNegotiationBuffer();
   process.stdout.write(KITTY_KEYBOARD_PROTOCOL_QUERY);
+}
+
+function settleKeyboardProtocolNegotiation(self: ProcessTerminal): void {
+  self.keyboardProtocolNegotiationSettled = true;
+  const waiters = self.keyboardProtocolNegotiationWaiters;
+  self.keyboardProtocolNegotiationWaiters = [];
+  for (const settle of waiters) settle();
+}
+
+export function do_waitForKeyboardProtocolNegotiation(self: ProcessTerminal, timeoutMs: number): Promise<boolean> {
+  if (self.keyboardProtocolNegotiationSettled) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const settle = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      self.keyboardProtocolNegotiationWaiters = self.keyboardProtocolNegotiationWaiters.filter(
+        (waiter) => waiter !== settle,
+      );
+      resolve(false);
+    }, timeoutMs);
+    // A pending wait must never hold the process open or delay exit.
+    timer.unref();
+    self.keyboardProtocolNegotiationWaiters.push(settle);
+  });
 }
 
 export function do_handleKeyboardProtocolNegotiationSequence(
@@ -97,7 +125,9 @@ export function do_handleKeyboardProtocolNegotiationSequence(
         self._kittyProtocolActive = true;
         setKittyProtocolActive(true);
       }
+      settleKeyboardProtocolNegotiation(self);
     } else {
+      // Zero flags is not final: the trailing device-attributes reply settles the modifyOtherKeys fallback.
       self.enableModifyOtherKeys();
     }
     return true;
@@ -106,6 +136,7 @@ export function do_handleKeyboardProtocolNegotiationSequence(
   if (!self._kittyProtocolActive) {
     self.enableModifyOtherKeys();
   }
+  settleKeyboardProtocolNegotiation(self);
   return true;
 }
 

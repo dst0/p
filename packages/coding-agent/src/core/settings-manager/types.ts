@@ -87,6 +87,7 @@ export interface MarkdownSettings {
 
 export interface WarningSettings {
   anthropicExtraUsage?: boolean; // default: true
+  terminalNewLine?: boolean; // default: true
 }
 
 export type DefaultProjectTrust = "ask" | "always" | "never";

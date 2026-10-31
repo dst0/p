@@ -103,14 +103,16 @@ Set `P_SKIP_VERSION_CHECK=1` to disable the p version update check. Use `--offli
 
 ### Warnings
 
-| Setting                        | Type    | Default | Description                                                              |
-| ------------------------------ | ------- | ------- | ------------------------------------------------------------------------ |
-| `warnings.anthropicExtraUsage` | boolean | `true`  | Show a warning when Anthropic subscription auth may use paid extra usage |
+| Setting                        | Type    | Default | Description                                                                                                 |
+| ------------------------------ | ------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `warnings.anthropicExtraUsage` | boolean | `true`  | Show a warning when Anthropic subscription auth may use paid extra usage                                    |
+| `warnings.terminalNewLine`     | boolean | `true`  | Show a startup notice when Shift+Enter may submit instead of adding a new line (no kitty keyboard protocol) |
 
 ```json
 {
   "warnings": {
-    "anthropicExtraUsage": false
+    "anthropicExtraUsage": false,
+    "terminalNewLine": false
   }
 }
 ```
@@ -369,7 +371,8 @@ See [packages.md](packages.md) for package management details.
   },
   "enabledModels": ["claude-*", "gpt-4o"],
   "warnings": {
-    "anthropicExtraUsage": true
+    "anthropicExtraUsage": true,
+    "terminalNewLine": true
   },
   "packages": ["p-skills"]
 }

@@ -1,0 +1,25 @@
+# 2026-10-31 — Shift+Enter hint must wait for keyboard protocol negotiation and skip terminals p already repairs
+
+- **Status:** Resolved
+- **Task/context:** Adding a startup notice for terminals where Shift+Enter arrives as plain Enter and submits the prompt (macOS Terminal.app, WezTerm with the default `enable_kitty_keyboard = false`). Worktree `p-work13`, branch `feature/terminal-newline-hint`.
+- **Unexpected observation or failure:** Three assumptions in the first design were wrong or unsafe.
+  - "Kitty protocol not active" is only knowable after the terminal answers the startup query. `ProcessTerminal` exposed `kittyProtocolActive` but no signal for "negotiation finished", so a check run right after `init()` would read `false` for every terminal and warn kitty users.
+  - Apple Terminal does not need a warning on a local Mac: `ProcessTerminal.forwardInputSequence` already rewrites a plain Return into Shift+Enter when the native macOS modifier helper sees Shift held. The documented fallback (`docs/terminal-setup.md`, Apple Terminal) works locally and only fails over SSH or without the prebuilt helper. A blanket "Terminal.app cannot report Shift+Enter" notice would have been a false alarm.
+  - xterm `modifyOtherKeys` cannot be confirmed by a query, so "kitty inactive" does not prove Shift+Enter submits; the notice is necessarily advisory ("may submit").
+- **Evidence:** `packages/tui/src/terminal/processterminal-methods/keyboard-protocol.ts` sends `CSI > 7 u`, `CSI ? u`, `CSI c` in one write and sets `_kittyProtocolActive` only when a non-zero `CSI ? <flags> u` reply arrives; a reply of `CSI ? 0 u` still enables modifyOtherKeys and is followed by the device-attributes reply. `packages/tui/src/terminal/helpers.ts` and `native-modifiers.ts` hold the Apple Terminal fallback. Regression tests: `packages/tui/test/terminal-keyboard-protocol-settle.test.ts`, `packages/tui/test/apple-terminal-shift-enter-fallback.test.ts`, `packages/coding-agent/test/terminal-newline-hint.test.ts`.
+- **Approaches tried:**
+  - **Attempt:** Read `terminal.kittyProtocolActive` immediately after `InteractiveMode.init()` (mirroring the tmux warning).
+    - **Outcome:** Rejected by code inspection (not executed).
+    - **Why:** The reply is asynchronous; the value is only final after the Kitty flags or device-attributes reply.
+  - **Attempt:** Poll or sleep a fixed time before deciding.
+    - **Outcome:** Rejected by design review.
+    - **Why:** Adds latency or still races on slow links; an explicit settled promise with a bounded, unref'd timeout is deterministic and never holds the process open.
+  - **Attempt:** Settle on any negotiation reply, including zero Kitty flags.
+    - **Outcome:** Rejected by design review; covered by a regression test.
+    - **Why:** Zero flags precede the device-attributes reply that confirms the modifyOtherKeys fallback; only non-zero flags or device attributes are final.
+- **Root cause:** Negotiation state was observable only as a boolean that starts `false`, and the Apple Terminal workaround lives in input normalisation rather than in any capability flag.
+- **Resolution:** `Terminal.waitForKeyboardProtocolNegotiation?(timeoutMs)` resolves true on the final reply and false on timeout. The notice decision runs after it, skips tmux (its own `extended-keys` warning), skips Apple Terminal when `hasAppleTerminalShiftEnterFallback()` is true, and only mentions configured `tui.input.newLine` keys that need modified-key reporting. `warnings.terminalNewLine: false` silences it.
+- **Verification:** Focused tui and coding-agent tests above, `npm run check`.
+- **Prevention/follow-up:** When adding another capability-dependent hint, wait on the negotiation promise rather than reading state at startup, and check existing input normalisation (Apple Terminal) before calling a terminal incapable. The hint can still appear in terminals where modifyOtherKeys works; the setting is the escape hatch.
+- **Reusable learning:** Async terminal capability state needs an explicit settled signal, and "terminal X cannot do Y" claims must be checked against p's own per-terminal repairs first.
+- **References:** `docs/terminal-setup.md`, `packages/tui/src/terminal/processterminal-methods/keyboard-protocol.ts`, `packages/coding-agent/src/modes/interactive/interactive-mode/interactivemode-methods/terminal-newline-hint.ts`.

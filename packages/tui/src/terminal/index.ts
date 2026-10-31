@@ -1,4 +1,5 @@
 export {
+  hasAppleTerminalShiftEnterFallback,
   isAppleTerminalSession,
   normalizeAppleTerminalInput,
   parseKeyboardProtocolNegotiationSequence,

@@ -1,3 +1,4 @@
+import { isNativeModifiersHelperAvailable } from "../native-modifiers.ts";
 import { APPLE_TERMINAL_SHIFT_ENTER_SEQUENCE } from "./constants.ts";
 import type { KeyboardProtocolNegotiationSequence } from "./types.ts";
 
@@ -20,6 +21,11 @@ export function isKeyboardProtocolNegotiationSequencePrefix(sequence: string): b
 
 export function isAppleTerminalSession(): boolean {
   return process.platform === "darwin" && process.env.TERM_PROGRAM === "Apple_Terminal";
+}
+
+/** True when Apple Terminal's plain-Return Shift+Enter can be recovered locally via the native modifier helper. */
+export function hasAppleTerminalShiftEnterFallback(): boolean {
+  return isAppleTerminalSession() && isNativeModifiersHelperAvailable();
 }
 
 export function normalizeAppleTerminalInput(data: string, isAppleTerminal: boolean, isShiftPressed: boolean): string {

@@ -2,9 +2,21 @@
 
 p uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
 
-## Kitty, iTerm2
+## Shift+Enter submits instead of adding a new line
 
-Work out of the box.
+`Shift+Enter` (the default `tui.input.newLine` key) only differs from `Enter` when the terminal reports modified keys, through the Kitty keyboard protocol or xterm `modifyOtherKeys`. Terminals that report neither send plain Enter, so the prompt is submitted.
+
+In a terminal that reports no modified keys, `Ctrl+J` arrives as a plain line feed and `\` followed by `Enter` is handled by the editor; both insert a new line.
+
+When the terminal does not answer p's Kitty keyboard protocol query (waiting at most 2 seconds, without delaying startup), p prints one notice per start naming the configured new-line key, the fallbacks above and, for WezTerm and iTerm2, the setting to change. It is not shown inside tmux (p warns about `extended-keys` there instead; see [tmux](tmux.md)), nor when no `tui.input.newLine` key depends on modified-key reporting. Because `modifyOtherKeys` support cannot be queried, the notice can also appear in terminals where `Shift+Enter` still works; turn it off with `warnings.terminalNewLine: false` in `settings.json` or in `/settings`.
+
+## Kitty
+
+Works out of the box.
+
+## iTerm2
+
+Recent versions work out of the box. If p reports that `Shift+Enter` may submit, enable **Report keys using CSI u** under Settings > Profiles > Keys for the profile you use, then restart p.
 
 ## Apple Terminal
 
@@ -40,7 +52,7 @@ If you want `Shift+Enter` to keep working in tmux via that remap, add `ctrl+j` t
 
 ## WezTerm
 
-WezTerm usually works out of the box for `Shift+Enter` via xterm modifyOtherKeys. To use the Kitty keyboard protocol explicitly, create `~/.wezterm.lua`:
+WezTerm does not enable the Kitty keyboard protocol by default (`enable_kitty_keyboard = false`). `Shift+Enter` usually still works via xterm modifyOtherKeys, but if it submits the prompt, or p shows the new-line notice, turn the protocol on by creating `~/.wezterm.lua`:
 
 ```lua
 local wezterm = require 'wezterm'

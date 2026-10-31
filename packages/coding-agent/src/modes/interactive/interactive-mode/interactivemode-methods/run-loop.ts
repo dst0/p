@@ -4,6 +4,7 @@ import { APP_TITLE, getAgentDir } from "../../../../config.ts";
 import { DefaultPackageManager } from "../../../../core/package-manager.ts";
 import { checkForNewPiVersion } from "../../../../utils/version-check.ts";
 import type { InteractiveMode } from "../interactivemode.ts";
+import { showTerminalNewLineHint } from "./terminal-newline-hint.ts";
 
 export function do_updateTerminalTitle(self: InteractiveMode): void {
   const cwdBasename = path.basename(self.sessionManager.getCwd());
@@ -42,6 +43,9 @@ export async function do_run(self: InteractiveMode): Promise<void> {
       self.showWarning(warning);
     }
   });
+
+  // Explain the new-line fallback when the terminal cannot report Shift+Enter (non-blocking)
+  void showTerminalNewLineHint(self);
 
   // Show startup warnings
   const { migratedProviders, modelFallbackMessage, initialMessage, initialImages, initialMessages } = self.options;

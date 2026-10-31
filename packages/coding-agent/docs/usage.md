@@ -29,6 +29,8 @@ The editor can be replaced temporarily by built-in UI such as `/settings` or by 
 
 See [Keybindings](keybindings.md) for all shortcuts and customization.
 
+If Shift+Enter submits instead of adding a new line, use Ctrl+J or `\` then Enter, and see [Terminal Setup](terminal-setup.md).
+
 ## Slash Commands
 
 Type `/` in the editor to open command completion. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
